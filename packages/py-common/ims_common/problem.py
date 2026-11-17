@@ -66,6 +66,7 @@ ERROR_CATALOGUE: Mapping[ErrorCode, tuple[int, str]] = {
     E.LICENCE_UNVERIFIABLE: (503, "The licence cannot be verified at the moment"),
     E.SCHEMA_VERSION_UNSUPPORTED: (503, "The database schema version is not supported by this release"),
     E.DB_BUSY: (503, "The database is busy; retry shortly"),
+    E.PLATFORM_UNAVAILABLE: (503, "A platform service is unavailable; retry shortly"),
     E.INTERNAL_ERROR: (500, "Internal error"),
     E.METHOD_NOT_ALLOWED: (405, "Method not allowed"),
 }

@@ -3,16 +3,21 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from uuid import UUID
 
 import httpx
 
 from ims_common.clock import Clock, SystemClock
+from ims_common.identifiers import key_from_secret
 from ims_common.objectstore import FileObjectStore, ObjectStore
 from ims_common.secrets import FileSecretsStore, SecretNotFoundError, SecretsStore
 from ims_common.service_auth import ServiceTokenIssuer, ServiceTokenVerifier
 from ims_common.tokens import KeySet, TokenCodec
-from ims_core.kernel.authn import Authenticator
+from ims_contracts.enums import LicenceModule
+from ims_core.kernel.authn import Authenticator, CredentialTokens
+from ims_core.kernel.context import Principal, Source, TenantContext
 from ims_core.kernel.db import DatabaseRouter
+from ims_core.kernel.directory import DirectoryCache, DirectoryClient, HttpDirectoryClient
 from ims_core.kernel.licence import (
     BundleSource,
     HttpRegistryClient,
@@ -33,6 +38,7 @@ CORE_READABLE_SECRETS = (
     "services/ims-core/signing",
     "services/*/verify",
     "platform/bundle-verify",
+    "shared/directory-lookup-key",
 )
 SERVICE_AUDIENCE_CORE_INTERNAL = "ims-core-internal"
 
@@ -46,11 +52,13 @@ class CoreRuntime:
     clock: Clock
     secrets: SecretsStore
     authenticator: Authenticator
+    credential_tokens: CredentialTokens
     snapshots: SnapshotStore
     gate: LicenceGate
     router: DatabaseRouter
     tenant_settings: TenantSettings
     bff_verifier: ServiceTokenVerifier | None
+    directory: DirectoryCache | None
     http: httpx.AsyncClient | None = None
 
     def pipeline(self, stages: PipelineStages) -> RequestPipeline:
@@ -62,6 +70,32 @@ class CoreRuntime:
             router=self.router,
             stages=stages,
             bff_verifier=self.bff_verifier,
+        )
+
+    async def credential_context(
+        self,
+        customer_id: UUID,
+        *,
+        module: LicenceModule,
+        request_id: str,
+        source: Source,
+        principal: Principal | None = None,
+    ) -> TenantContext:
+        """Tenant context for a credential endpoint (sign-in, MFA, token refresh, client grant).
+
+        The customer comes from the Login Directory or from a verified credential token, never
+        from request input (AD-21). The licence gate applies as on every request; credential
+        routes are allowed in read-only state (LD-77).
+        """
+        snapshot, state = await self.gate.check(customer_id, module=module.value, read_only_ok=True)
+        return TenantContext(
+            customer_id=snapshot.customer_id,
+            customer_code=snapshot.customer_code,
+            snapshot=snapshot,
+            licence_state=state,
+            request_id=request_id,
+            source=source,
+            principal=principal,
         )
 
     async def aclose(self) -> None:
@@ -86,6 +120,7 @@ async def build_runtime(
     clock: Clock | None = None,
     registry_client: RegistryClient | None = None,
     registry_transport: httpx.AsyncBaseTransport | None = None,
+    directory_client: DirectoryClient | None = None,
 ) -> CoreRuntime:
     """Build the kernel. ``registry_client`` or ``registry_transport`` let tests put the Platform
     Service in-process or simulate its outage."""
@@ -94,7 +129,8 @@ async def build_runtime(
     object_store = object_store or build_object_store(settings)
 
     token_keys = KeySet.from_secret(await secrets.get(settings.token_signing_key_ref))
-    authenticator = Authenticator(TokenCodec(token_keys, settings.token_issuer, clock))
+    token_codec = TokenCodec(token_keys, settings.token_issuer, clock)
+    authenticator = Authenticator(token_codec)
 
     http: httpx.AsyncClient | None = None
     if registry_client is None:
@@ -104,11 +140,10 @@ async def build_runtime(
             timeout=settings.platform_timeout_seconds,
             transport=registry_transport,
         )
-        registry_client = HttpRegistryClient(
-            http,
-            ServiceTokenIssuer(settings.service_name, service_keys, clock),
-            retries=settings.platform_retries,
-        )
+        service_tokens = ServiceTokenIssuer(settings.service_name, service_keys, clock)
+        registry_client = HttpRegistryClient(http, service_tokens, retries=settings.platform_retries)
+        if directory_client is None:
+            directory_client = HttpDirectoryClient(http, service_tokens, retries=settings.platform_retries)
 
     bundle_keys = KeySet.from_secret(await secrets.get(settings.bundle_verify_key_ref))
     snapshots = SnapshotStore(
@@ -119,6 +154,19 @@ async def build_runtime(
         bundle=BundleSource(object_store, bundle_keys),
         bundle_cache_seconds=settings.bundle_cache_seconds,
     )
+
+    directory: DirectoryCache | None = None
+    if directory_client is not None:
+        directory = DirectoryCache(
+            directory_client,
+            lookup_key=key_from_secret(await secrets.get(settings.directory_lookup_key_ref)),
+            clock=clock,
+            ttl_seconds=settings.directory_cache_seconds,
+            probe_backoff_seconds=settings.registry_probe_backoff_seconds,
+            bundle=BundleSource(object_store, bundle_keys),
+            bundle_cache_seconds=settings.bundle_cache_seconds,
+        )
+        snapshots.add_change_listener(directory.on_change)
 
     try:
         bff_keys = KeySet.from_secret(await secrets.get(settings.bff_verify_key_ref))
@@ -134,10 +182,12 @@ async def build_runtime(
         clock=clock,
         secrets=secrets,
         authenticator=authenticator,
+        credential_tokens=CredentialTokens(token_codec),
         snapshots=snapshots,
         gate=LicenceGate(snapshots, clock),
         router=DatabaseRouter(secrets, settings, clock),
         tenant_settings=TenantSettings(SETTINGS_REGISTRY, clock),
         bff_verifier=bff_verifier,
+        directory=directory,
         http=http,
     )

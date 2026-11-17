@@ -127,3 +127,85 @@ class Authenticator:
                 "gid": str(grant_id),
             },
         )
+
+
+# ------------------------------------------------------------------------- credential tokens
+AUDIENCE_REFRESH = "ims-refresh"
+AUDIENCE_MFA = "ims-mfa"
+
+
+@dataclass(frozen=True)
+class RefreshClaims:
+    """A refresh token (LLD 6.2): valid only while its ID is the session's current one (LD-26)."""
+
+    customer_id: UUID
+    user_id: UUID
+    session_id: UUID
+    token_id: str
+
+
+@dataclass(frozen=True)
+class ChallengeClaims:
+    """An MFA challenge, issued after a correct password; single use (LD-79)."""
+
+    customer_id: UUID
+    user_id: UUID
+    token_id: str
+
+
+class CredentialTokens:
+    """Refresh tokens and MFA challenges. Both carry the customer, so the endpoints that accept
+    them (no access token) still route only from a verified claim (AD-21)."""
+
+    def __init__(self, codec: TokenCodec) -> None:
+        self._codec = codec
+
+    def _claims(self, token: str, audience: str) -> dict[str, object]:
+        try:
+            return self._codec.decode(token, audience=audience)
+        except TokenError:
+            # Expired or invalid alike: the caller has to sign in again.
+            raise _unauthenticated() from None
+
+    def issue_refresh(
+        self, *, customer_id: UUID, user_id: UUID, session_id: UUID, token_id: str, ttl: timedelta
+    ) -> str:
+        return self._codec.encode(
+            subject=str(user_id),
+            audience=AUDIENCE_REFRESH,
+            ttl=ttl,
+            claims={"cid": str(customer_id), "sid": str(session_id)},
+            token_id=token_id,
+        )
+
+    def verify_refresh(self, token: str) -> RefreshClaims:
+        claims = self._claims(token, AUDIENCE_REFRESH)
+        try:
+            return RefreshClaims(
+                customer_id=UUID(str(claims["cid"])),
+                user_id=UUID(str(claims["sub"])),
+                session_id=UUID(str(claims["sid"])),
+                token_id=str(claims["jti"]),
+            )
+        except (KeyError, ValueError):
+            raise _unauthenticated() from None
+
+    def issue_mfa_challenge(self, *, customer_id: UUID, user_id: UUID, token_id: str, ttl: timedelta) -> str:
+        return self._codec.encode(
+            subject=str(user_id),
+            audience=AUDIENCE_MFA,
+            ttl=ttl,
+            claims={"cid": str(customer_id)},
+            token_id=token_id,
+        )
+
+    def verify_mfa_challenge(self, token: str) -> ChallengeClaims:
+        claims = self._claims(token, AUDIENCE_MFA)
+        try:
+            return ChallengeClaims(
+                customer_id=UUID(str(claims["cid"])),
+                user_id=UUID(str(claims["sub"])),
+                token_id=str(claims["jti"]),
+            )
+        except (KeyError, ValueError):
+            raise _unauthenticated() from None

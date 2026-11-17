@@ -52,6 +52,25 @@ class CoreSettings(BaseSettings):
     db_credential_cache_seconds: float = 600.0
     db_busy_retry_after_seconds: int = 2
 
+    # Login Directory (AD-79; LLD 6.3): cached lookups, keyed by the shared lookup key.
+    directory_lookup_key_ref: str = "shared/directory-lookup-key"
+    directory_cache_seconds: float = 600.0
+
+    # Identity (LLD 6.2, section 16). Lifetimes are LLD defaults (#26).
+    mfa_encryption_key_ref: str = "core/mfa-encryption"
+    totp_issuer: str = "ZongoVita IMS"
+    session_idle_hours: float = 8.0
+    session_absolute_days: float = 7.0
+    mfa_challenge_minutes: float = 5.0
+    lockout_threshold: int = 5
+    lockout_minutes: float = 15.0
+    #: How long a new user's one-time activation code is valid. Not set by the LLD (D-14).
+    activation_code_hours: float = 72.0
+    #: Argon2id cost (AD-65, section 16: "tuned to about 250 ms"); tune per deployment hardware.
+    password_time_cost: int = 3
+    password_memory_kib: int = 65536
+    password_parallelism: int = 4
+
     # Unit-of-work retry on deadlock or serialisation failure (LLD 9.1).
     uow_max_retries: int = 3
 

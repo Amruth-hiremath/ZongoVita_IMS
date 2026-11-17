@@ -25,6 +25,8 @@ The `.docx` files are not directly readable. Extract them to text (zip + `word/d
 - Audit, ledger and similar history are append-only by grant and by trigger. No hard deletes outside the LLD exception list (`ims_core/schema/access.py`).
 - No session state in SQL: no session `SET`, `LISTEN/NOTIFY`, session advisory locks, temp tables, prepared statements (LD-75).
 - Every tenant route goes through `ImsRouter` with `@declare(access=..., read_only_ok=...)`.
+- Every sign-in path does exactly one Argon2id verification and fails with the same generic answer (LD-80); tests count verifications. Argon2id never runs inside a database transaction.
+- The login pepper never leaves the Platform Service; products resolve identifiers by the separate lookup hash (D-13).
 
 ## Commands
 

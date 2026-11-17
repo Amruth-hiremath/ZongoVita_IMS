@@ -204,7 +204,12 @@ def test_every_error_code_has_one_status_and_title() -> None:
         "LICENCE_TERMINATED",
         "MODULE_NOT_LICENSED",
     }
-    assert by_status[503] == {"LICENCE_UNVERIFIABLE", "SCHEMA_VERSION_UNSUPPORTED", "DB_BUSY"}
+    assert by_status[503] == {
+        "LICENCE_UNVERIFIABLE",
+        "SCHEMA_VERSION_UNSUPPORTED",
+        "DB_BUSY",
+        "PLATFORM_UNAVAILABLE",
+    }
     assert by_status[404] == {"NOT_FOUND"}
     assert by_status[412] == {"VERSION_CONFLICT"}
     assert by_status[428] == {"PRECONDITION_REQUIRED"}

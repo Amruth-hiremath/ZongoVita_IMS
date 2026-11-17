@@ -16,12 +16,14 @@ from uuid import UUID
 from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 
+from ims_common.identifiers import new_key_secret
 from ims_common.objectstore import FileObjectStore
 from ims_common.pg import create_pooler_engine
 from ims_common.secrets import FileSecretsStore
 from ims_common.tokens import KeySet
 from ims_contracts.enums import DatabaseStatus, LicenceModule, Placement
 from ims_core.kernel.runtime import CORE_READABLE_SECRETS
+from ims_core.modules.identity.credentials import SecretBox
 from ims_db_pipeline.cluster import ClusterAdmin, cluster_admin_ref
 from ims_db_pipeline.migrate import migrate_control_plane, migrate_customer_database
 from ims_db_pipeline.provision import CustomerDatabase, provision_control_plane, provision_customer_database
@@ -171,6 +173,9 @@ async def bootstrap(root: Path) -> Stack:
     bundle_keys = KeySet.generate("bundle-2026-11")
     await put("platform/bundle-signing", bundle_keys.to_secret())
     await put("platform/bundle-verify", bundle_keys.public_secret())
+    await put("platform/login-pepper", new_key_secret())
+    await put("shared/directory-lookup-key", new_key_secret())
+    await put("core/mfa-encryption", SecretBox.new_ring())
     for service in SERVICES:
         keys = KeySet.generate(f"{service}-1")
         stack.service_keys[service] = keys

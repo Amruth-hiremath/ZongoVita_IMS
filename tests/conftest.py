@@ -147,6 +147,10 @@ def core_settings(stack: Stack) -> CoreSettings:
         db_sslmode="disable",
         secrets_root=stack.secrets_root,
         object_store_root=stack.objects_root,
+        # Argon2id at its cheapest: the tests count verifications instead of timing them.
+        password_time_cost=1,
+        password_memory_kib=1024,
+        password_parallelism=1,
     )
 
 

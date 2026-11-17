@@ -8,7 +8,7 @@ customer or database identifier (AD-21). A static check keeps construction insid
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Literal
 from uuid import UUID
 
@@ -46,3 +46,9 @@ class TenantContext:
     @property
     def gxp_mode(self) -> bool:
         return self.snapshot.gxp_mode
+
+
+def with_principal(ctx: TenantContext, principal: Principal) -> TenantContext:
+    """The same context acting as ``principal``: used by credential flows once the caller is
+    identified (sign-in, token refresh), so audit entries name them."""
+    return replace(ctx, principal=principal)

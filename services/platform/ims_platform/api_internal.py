@@ -17,8 +17,17 @@ from ims_common.service_auth import ServiceCaller
 from ims_common.tokens import TokenError
 from ims_contracts.errors import ErrorCode
 from ims_contracts.licence import LicenceSnapshot
-from ims_contracts.platform_api import ChangesResponse
-from ims_platform.registry import MAX_CHANGES_PAGE
+from ims_contracts.platform_api import (
+    ChangesResponse,
+    DirectoryActivationRequest,
+    DirectoryDisableRequest,
+    DirectoryEntry,
+    DirectoryListing,
+    DirectoryReservationRequest,
+    DirectoryReservationResponse,
+    DirectoryResolveRequest,
+)
+from ims_platform.registry import MAX_CHANGES_PAGE, Actor
 from ims_platform.runtime import PlatformRuntime
 
 CORE_AND_WORKER = frozenset({"ims-core", "ims-worker"})
@@ -73,3 +82,84 @@ async def get_changes(
 ) -> ChangesResponse:
     """Registry changes after ``after_seq`` in commit order; omit it to learn the head position."""
     return await runtime.registry.changes(after_seq, limit)
+
+
+# ---------------------------------------------------------------------------- login directory
+# Core resolves and reserves while creating principals; Workers activate, disable and reconcile
+# (LLD 6.8). Until Workers exist (unit 6) Core also completes activation and disabling itself.
+
+
+def _service_actor(caller: ServiceCaller, request: Request) -> Actor:
+    return Actor(f"service:{caller.name}", request_id=request.headers.get("x-request-id"))
+
+
+@router.post("/directory/resolve", response_model=DirectoryEntry)
+async def resolve_identifier(
+    body: DirectoryResolveRequest,
+    runtime: Annotated[PlatformRuntime, Depends(get_runtime)],
+    _caller: Annotated[ServiceCaller, Depends(require_service(frozenset({"ims-core"})))],
+) -> DirectoryEntry:
+    """Identifier -> customer, principal, status. 404 when unknown or only reserved."""
+    entry = await runtime.directory.resolve(body.identifier)
+    if entry is None:
+        raise DomainError(ErrorCode.NOT_FOUND, "identifier is not in the directory")
+    return entry
+
+
+@router.post("/directory/reservations", response_model=DirectoryReservationResponse, status_code=201)
+async def reserve_identifier(
+    body: DirectoryReservationRequest,
+    request: Request,
+    runtime: Annotated[PlatformRuntime, Depends(get_runtime)],
+    caller: Annotated[ServiceCaller, Depends(require_service(frozenset({"ims-core"})))],
+) -> DirectoryReservationResponse:
+    """Hold an identifier for 15 minutes for a principal being created; 409 if taken."""
+    return await runtime.directory.reserve(
+        customer_id=body.customer_id,
+        principal_type=body.principal_type,
+        principal_id=body.principal_id,
+        identifier=body.identifier,
+        actor=_service_actor(caller, request),
+    )
+
+
+@router.post("/directory/{principal_id}/activate", status_code=204)
+async def activate_identifier(
+    principal_id: UUID,
+    body: DirectoryActivationRequest,
+    request: Request,
+    runtime: Annotated[PlatformRuntime, Depends(get_runtime)],
+    caller: Annotated[ServiceCaller, Depends(require_service(CORE_AND_WORKER))],
+) -> None:
+    await runtime.directory.activate(
+        customer_id=body.customer_id,
+        principal_type=body.principal_type,
+        principal_id=principal_id,
+        identifier=body.identifier,
+        actor=_service_actor(caller, request),
+    )
+
+
+@router.post("/directory/{principal_id}/disable", status_code=204)
+async def disable_identifier(
+    principal_id: UUID,
+    body: DirectoryDisableRequest,
+    request: Request,
+    runtime: Annotated[PlatformRuntime, Depends(get_runtime)],
+    caller: Annotated[ServiceCaller, Depends(require_service(CORE_AND_WORKER))],
+) -> None:
+    await runtime.directory.disable(
+        customer_id=body.customer_id,
+        principal_type=body.principal_type,
+        principal_id=principal_id,
+        actor=_service_actor(caller, request),
+    )
+
+
+@router.get("/directory", response_model=DirectoryListing)
+async def list_directory(
+    customer_id: UUID,
+    runtime: Annotated[PlatformRuntime, Depends(get_runtime)],
+    _caller: Annotated[ServiceCaller, Depends(require_service(CORE_AND_WORKER))],
+) -> DirectoryListing:
+    return DirectoryListing(entries=await runtime.directory.list_for_customer(customer_id))

@@ -45,6 +45,13 @@ TABLE_ACCESS: dict[str, AccessClass] = {
     "integration.outbox_events": AccessClass.APPEND_ONLY,
     # Exception list: expired keys are deleted by the cleanup job.
     "integration.idempotency_keys": AccessClass.DELETABLE,
+    # Identity (unit 2).
+    "iam.users": AccessClass.BUSINESS,
+    "iam.mfa_factors": AccessClass.BUSINESS,
+    "iam.mfa_recovery_codes": AccessClass.BUSINESS,
+    "iam.api_clients": AccessClass.BUSINESS,
+    # Exception list: sessions past their absolute expiry are deleted by a cleanup job.
+    "iam.sessions": AccessClass.DELETABLE,
 }
 
 #: Tables where UPDATE is granted on named columns only.

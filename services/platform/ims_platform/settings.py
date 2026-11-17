@@ -38,6 +38,10 @@ class PlatformSettings(BaseSettings):
     object_store_root: Path = Path(".local/objects")
 
     bundle_signing_key_ref: str = "platform/bundle-signing"
+    # Login Directory keys (LD-10): the pepper never leaves the Platform Service; the lookup key is
+    # shared with products so they can resolve identifiers from the snapshot bundle (AD-79).
+    login_pepper_ref: str = "platform/login-pepper"
+    directory_lookup_key_ref: str = "shared/directory-lookup-key"
     bundle_interval_seconds: float = 300.0  # LD-78: every 5 minutes
 
     #: Services allowed to call /internal/v1, with the reference of their verification keys.

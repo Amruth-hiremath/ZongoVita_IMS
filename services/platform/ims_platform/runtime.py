@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from ims_common.clock import Clock, SystemClock
+from ims_common.identifiers import key_from_secret
 from ims_common.objectstore import FileObjectStore, ObjectStore
 from ims_common.pg import create_pooler_engine
 from ims_common.secrets import FileSecretsStore, SecretsStore
@@ -14,12 +15,13 @@ from ims_common.service_auth import ServiceTokenVerifier
 from ims_common.tokens import KeySet
 from ims_contracts.platform_api import SERVICE_AUDIENCE_PLATFORM_INTERNAL
 from ims_platform.bundle import BundlePublisher
+from ims_platform.directory import DirectoryService
 from ims_platform.registry import RegistryService
 from ims_platform.settings import PlatformSettings
 
 #: What the Platform Service identity may read from the secrets store. Customer database
 #: application and migration credentials are deliberately absent (AD-13).
-PLATFORM_READABLE_SECRETS = ("platform/*", "services/*/verify")
+PLATFORM_READABLE_SECRETS = ("platform/*", "services/*/verify", "shared/directory-lookup-key")
 
 
 @dataclass
@@ -27,6 +29,7 @@ class PlatformRuntime:
     settings: PlatformSettings
     engine: AsyncEngine
     registry: RegistryService
+    directory: DirectoryService
     bundle_publisher: BundlePublisher
     service_verifier: ServiceTokenVerifier
     clock: Clock
@@ -76,6 +79,12 @@ async def build_runtime(
         settings=settings,
         engine=engine,
         registry=registry,
+        directory=DirectoryService(
+            engine,
+            pepper=key_from_secret(await secrets.get(settings.login_pepper_ref)),
+            lookup_key=key_from_secret(await secrets.get(settings.directory_lookup_key_ref)),
+            clock=clock,
+        ),
         bundle_publisher=BundlePublisher(registry, object_store, signing_keys, clock),
         service_verifier=ServiceTokenVerifier(SERVICE_AUDIENCE_PLATFORM_INTERNAL, trusted, clock),
         clock=clock,

@@ -5,6 +5,7 @@ so another ZongoVita product can adopt the same service.
 """
 
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -38,11 +39,15 @@ class ChangesResponse(BaseModel):
 
 
 class DirectoryBundleEntry(BaseModel):
-    """One login-directory row as carried in the snapshot bundle (hash only, no identifier)."""
+    """One login-directory row as carried in the snapshot bundle (hash only, no identifier).
+
+    Keyed by the lookup hash, which products can compute; the pepper-keyed login hash stays inside
+    the Platform Service (LD-10).
+    """
 
     model_config = ConfigDict(extra="ignore", frozen=True)
 
-    login_hash: str = Field(description="hex HMAC-SHA256(pepper, normalised identifier)")
+    lookup_hash: str = Field(description="hex HMAC-SHA256(directory lookup key, normalised identifier)")
     customer_id: UUID
     principal_type: str
     principal_id: UUID
@@ -59,3 +64,73 @@ class SnapshotBundle(BaseModel):
     feed_seq: int
     snapshots: list[LicenceSnapshot]
     directory: list[DirectoryBundleEntry]
+
+
+# --------------------------------------------------------------------------- login directory
+DirectoryPrincipalType = Literal["user", "api_client"]
+DirectoryStatus = Literal["reserved", "active", "disabled"]
+
+
+class DirectoryResolveRequest(BaseModel):
+    """POST /internal/v1/directory/resolve"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    identifier: str = Field(min_length=1, max_length=320)
+
+
+class DirectoryEntry(BaseModel):
+    """Which customer and principal an identifier belongs to. Only active and disabled entries
+    resolve; a reservation is not yet a principal anyone can sign in as."""
+
+    model_config = ConfigDict(extra="ignore", frozen=True)
+
+    customer_id: UUID
+    principal_type: DirectoryPrincipalType
+    principal_id: UUID
+    status: DirectoryStatus
+
+
+class DirectoryReservationRequest(BaseModel):
+    """POST /internal/v1/directory/reservations: hold an identifier for a principal being created."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    customer_id: UUID
+    principal_type: DirectoryPrincipalType
+    principal_id: UUID
+    identifier: str = Field(min_length=1, max_length=320)
+
+
+class DirectoryReservationResponse(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    status: DirectoryStatus
+    reserved_until: datetime | None
+
+
+class DirectoryActivationRequest(BaseModel):
+    """POST /internal/v1/directory/{principal_id}/activate (activate, or re-reserve and activate)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    customer_id: UUID
+    principal_type: DirectoryPrincipalType
+    identifier: str = Field(min_length=1, max_length=320)
+
+
+class DirectoryDisableRequest(BaseModel):
+    """POST /internal/v1/directory/{principal_id}/disable"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    customer_id: UUID
+    principal_type: DirectoryPrincipalType
+
+
+class DirectoryListing(BaseModel):
+    """GET /internal/v1/directory?customer_id=: one customer's entries, for reconciliation."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    entries: list[DirectoryEntry]

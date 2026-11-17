@@ -137,7 +137,13 @@ class TokenCodec:
         return self._issuer
 
     def encode(
-        self, *, subject: str, audience: str, ttl: timedelta, claims: dict[str, Any] | None = None
+        self,
+        *,
+        subject: str,
+        audience: str,
+        ttl: timedelta,
+        claims: dict[str, Any] | None = None,
+        token_id: str | None = None,
     ) -> str:
         if self._keys.current_kid is None:
             raise RuntimeError("this codec cannot issue tokens: its key set holds no private key")
@@ -149,7 +155,7 @@ class TokenCodec:
             sub=subject,
             iat=now,
             exp=now + int(ttl.total_seconds()),
-            jti=str(uuid7()),
+            jti=token_id or str(uuid7()),
         )
         kid = self._keys.current_kid
         return jwt.encode(payload, self._keys.private[kid], algorithm=_ALGORITHM, headers={"kid": kid})

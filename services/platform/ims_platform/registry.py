@@ -63,59 +63,59 @@ def _invalid(field: str, message: str) -> DomainError:
     return DomainError(ErrorCode.VALIDATION_FAILED, errors=[FieldError(field=field, message=message)])
 
 
+async def audit_change(
+    conn: AsyncConnection,
+    actor: Actor,
+    action: str,
+    entity_type: str,
+    entity_id: UUID | str,
+    customer_id: UUID | None,
+    *,
+    before: dict[str, Any] | None = None,
+    after: dict[str, Any] | None = None,
+    reason: str | None = None,
+) -> None:
+    await conn.execute(
+        text(
+            """
+            INSERT INTO platform.platform_audit
+                (actor, action, entity_type, entity_id, customer_id, before, after, reason, request_id)
+            VALUES (:actor, :action, :entity_type, :entity_id, :customer_id,
+                    CAST(:before AS jsonb), CAST(:after AS jsonb), :reason, :request_id)
+            """
+        ),
+        {
+            "actor": actor.ref,
+            "action": action,
+            "entity_type": entity_type,
+            "entity_id": str(entity_id),
+            "customer_id": customer_id,
+            "before": json.dumps(before, default=str) if before is not None else None,
+            "after": json.dumps(after, default=str) if after is not None else None,
+            "reason": reason,
+            "request_id": actor.request_id,
+        },
+    )
+
+
+async def notify_change(conn: AsyncConnection, customer_id: UUID, change_type: ChangeType) -> int:
+    """Append to the change feed. Call last in the transaction: the feed lock is held until commit."""
+    result = await conn.execute(
+        text(
+            "INSERT INTO platform.change_feed (customer_id, change_type) "
+            "VALUES (:customer_id, :change_type) RETURNING seq"
+        ),
+        {"customer_id": customer_id, "change_type": change_type.value},
+    )
+    return int(result.scalar_one())
+
+
 class RegistryService:
     def __init__(self, engine: AsyncEngine, clock: Clock | None = None) -> None:
         self._engine = engine
         self._clock = clock or SystemClock()
 
     # ------------------------------------------------------------------------------ helpers
-    @staticmethod
-    async def _audit(
-        conn: AsyncConnection,
-        actor: Actor,
-        action: str,
-        entity_type: str,
-        entity_id: UUID | str,
-        customer_id: UUID | None,
-        *,
-        before: dict[str, Any] | None = None,
-        after: dict[str, Any] | None = None,
-        reason: str | None = None,
-    ) -> None:
-        await conn.execute(
-            text(
-                """
-                INSERT INTO platform.platform_audit
-                    (actor, action, entity_type, entity_id, customer_id, before, after, reason, request_id)
-                VALUES (:actor, :action, :entity_type, :entity_id, :customer_id,
-                        CAST(:before AS jsonb), CAST(:after AS jsonb), :reason, :request_id)
-                """
-            ),
-            {
-                "actor": actor.ref,
-                "action": action,
-                "entity_type": entity_type,
-                "entity_id": str(entity_id),
-                "customer_id": customer_id,
-                "before": json.dumps(before, default=str) if before is not None else None,
-                "after": json.dumps(after, default=str) if after is not None else None,
-                "reason": reason,
-                "request_id": actor.request_id,
-            },
-        )
-
-    @staticmethod
-    async def _notify(conn: AsyncConnection, customer_id: UUID, change_type: ChangeType) -> int:
-        """Append to the change feed. Call last: the feed lock is held until commit."""
-        result = await conn.execute(
-            text(
-                "INSERT INTO platform.change_feed (customer_id, change_type) "
-                "VALUES (:customer_id, :change_type) RETURNING seq"
-            ),
-            {"customer_id": customer_id, "change_type": change_type.value},
-        )
-        return int(result.scalar_one())
-
     @staticmethod
     async def _lock_customer(conn: AsyncConnection, customer_id: UUID) -> dict[str, Any]:
         row = (
@@ -168,7 +168,7 @@ class RegistryService:
                         "actor": actor.ref,
                     },
                 )
-                await self._audit(
+                await audit_change(
                     conn,
                     actor,
                     "customer.registered",
@@ -216,7 +216,7 @@ class RegistryService:
                 ),
                 {"status": target.value, "actor": actor.ref, "id": customer_id},
             )
-            await self._audit(
+            await audit_change(
                 conn,
                 actor,
                 action,
@@ -227,7 +227,7 @@ class RegistryService:
                 after={"status": target.value},
                 reason=reason,
             )
-            await self._notify(conn, customer_id, ChangeType.STATUS)
+            await notify_change(conn, customer_id, ChangeType.STATUS)
 
     @staticmethod
     async def _require_ready_for_activation(conn: AsyncConnection, customer_id: UUID) -> None:
@@ -320,7 +320,7 @@ class RegistryService:
                 ),
                 {"actor": actor.ref, "id": customer_id},
             )
-            await self._audit(
+            await audit_change(
                 conn,
                 actor,
                 "customer.gxp_locked",
@@ -330,7 +330,7 @@ class RegistryService:
                 before={"gxp_locked": False},
                 after={"gxp_locked": True},
             )
-            await self._notify(conn, customer_id, ChangeType.GXP)
+            await notify_change(conn, customer_id, ChangeType.GXP)
             return True
 
     # ------------------------------------------------------------------------------ licences
@@ -395,7 +395,7 @@ class RegistryService:
                     text("INSERT INTO platform.licence_modules (licence_id, module_code) VALUES (:l, :m)"),
                     [{"l": licence_id, "m": module} for module in sorted(modules)],
                 )
-                await self._audit(
+                await audit_change(
                     conn,
                     actor,
                     "licence.created",
@@ -458,7 +458,7 @@ class RegistryService:
                 ),
                 {"actor": actor.ref, "id": licence_id},
             )
-            await self._audit(
+            await audit_change(
                 conn,
                 actor,
                 "licence.activated",
@@ -468,7 +468,7 @@ class RegistryService:
                 before={"record_status": "draft"},
                 after={"record_status": "active", "supersedes": superseded},
             )
-            await self._notify(conn, owner, ChangeType.LICENCE)
+            await notify_change(conn, owner, ChangeType.LICENCE)
 
     # ------------------------------------------------------------------- customer databases
     async def register_database(
@@ -510,7 +510,7 @@ class RegistryService:
                         "actor": actor.ref,
                     },
                 )
-                await self._audit(
+                await audit_change(
                     conn,
                     actor,
                     "database.registered",
@@ -575,7 +575,7 @@ class RegistryService:
                 ),
                 {"status": new_status, "version": new_version, "actor": actor.ref, "id": before["id"]},
             )
-            await self._audit(
+            await audit_change(
                 conn,
                 actor,
                 "database.state_recorded",
@@ -585,7 +585,7 @@ class RegistryService:
                 before={"status": before["status"], "schema_version": before["schema_version"]},
                 after={"status": new_status, "schema_version": new_version},
             )
-            await self._notify(conn, customer_id, ChangeType.DATABASE)
+            await notify_change(conn, customer_id, ChangeType.DATABASE)
 
     # --------------------------------------------------------------- narrow read interface
     def _to_snapshot(self, row: Any, fetched_at: datetime) -> LicenceSnapshot:
@@ -633,15 +633,16 @@ class RegistryService:
         return [self._to_snapshot(row, now) for row in rows]
 
     async def list_directory(self) -> list[DirectoryBundleEntry]:
-        """Resolvable login-directory entries (hashes only), for the snapshot bundle."""
+        """Resolvable login-directory entries by lookup hash, for the snapshot bundle (AD-79)."""
         async with self._engine.connect() as conn:
             rows = (
                 (
                     await conn.execute(
                         text(
-                            "SELECT encode(login_hash, 'hex') AS login_hash, customer_id, principal_type, "
+                            "SELECT encode(lookup_hash, 'hex') AS lookup_hash, customer_id, principal_type, "
                             "principal_id, status FROM platform.login_directory "
-                            "WHERE status IN ('active', 'disabled') ORDER BY login_hash"
+                            "WHERE status IN ('active', 'disabled') AND lookup_hash IS NOT NULL "
+                            "ORDER BY lookup_hash"
                         )
                     )
                 )
