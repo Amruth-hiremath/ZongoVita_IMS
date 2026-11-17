@@ -1,0 +1,71 @@
+[project]
+name = "zongovita-ims"
+version = "0.1.0"
+description = "ZongoVita IMS monorepo (workspace root; not a distributable package)"
+requires-python = ">=3.13"
+dependencies = []
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = [
+    "packages/py-contracts",
+    "packages/py-common",
+    "services/core",
+    "services/platform",
+    "pipelines/database",
+]
+
+[tool.uv.sources]
+ims-contracts = { workspace = true }
+ims-common = { workspace = true }
+ims-core = { workspace = true }
+ims-platform = { workspace = true }
+ims-db-pipeline = { workspace = true }
+
+[dependency-groups]
+dev = [
+    "ims-contracts",
+    "ims-common",
+    "ims-core",
+    "ims-platform",
+    "ims-db-pipeline",
+    "pytest>=8.3",
+    "pytest-asyncio>=0.25",
+    "hypothesis>=6.120",
+    "ruff>=0.8",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
+addopts = "-ra --strict-markers"
+markers = [
+    "db: needs the local PostgreSQL + PgBouncer stack (deploy/local)",
+    "slow: takes more than a few seconds (timeouts that have to elapse for real)",
+]
+
+[tool.ruff]
+line-length = 110
+target-version = "py313"
+extend-exclude = ["Docs", "apps"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S", "ASYNC", "RUF", "SIM", "PL", "T20", "DTZ"]
+ignore = [
+    "PLR0913", # commands legitimately carry many keyword arguments
+    "PLR0917", # same, for positional arguments of internal helpers
+    "PLR2004", # magic values in comparisons are flagged case by case in review
+    "S101",    # assert is used in tests and for internal invariants
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S105", "S106", "S608", "PLR0915", "T20", "E501"] # SQL literals and fixture signatures
+"**/migrations/**" = ["S608"]
+"pipelines/**" = ["S608", "T20"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["ims_contracts", "ims_common", "ims_core", "ims_platform", "ims_db_pipeline"]

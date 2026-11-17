@@ -1,0 +1,5 @@
+@import "tailwindcss";
+@import "../../../../packages/ui/src/styles.css";
+
+/* Components in the shared kit carry Tailwind classes too. */
+@source "../../../../packages/ui/src";

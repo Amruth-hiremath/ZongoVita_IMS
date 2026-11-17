@@ -1,0 +1,101 @@
+/** FIXTURE: sample data from wireframe F44 Reports — Catalog & Deliveries. Temporary; see src/data/source.ts. */
+import type { ReportsPage } from "@/data/reports";
+
+export const reportsPage: ReportsPage = {
+  kpis: {
+    runs: { month_label: "Sep", total: 23, scheduled: 12, ad_hoc: 11 },
+    approval_turnaround: { hours: "4.2", decisions: 31, target_hours: "8" },
+    expiry: { batches: 2, inside_30_days: 1 },
+    supplier_claims: { amount: "2140", case_ref: "EF-0041" },
+  },
+  catalog: [
+    {
+      report_id: "consumption",
+      name: "Consumption",
+      covers: "Issues vs approvals · 4 departments",
+      last_run_label: "today 07:40",
+      schedule: "Weekly",
+      state: { tone: "green", label: "4 depts live" },
+    },
+    {
+      report_id: "approval-turnaround",
+      name: "Approval turnaround",
+      covers: "Your decisions · request to issue",
+      last_run_label: "01 Oct",
+      schedule: "Monthly",
+      state: { tone: "green", label: "4.2 h avg" },
+    },
+    {
+      report_id: "vendor-quality",
+      name: "Vendor quality",
+      covers: "FAIL verdicts per supplier (F33)",
+      last_run_label: "26 Sep",
+      schedule: "On event",
+      state: { tone: "red", label: "2.1% poor" },
+    },
+    {
+      report_id: "expiry-due",
+      name: "Expiry due",
+      covers: "60 / 30 / 7-day windows (FB-05)",
+      last_run_label: "today 06:00",
+      schedule: "Daily",
+      state: { tone: "amber", label: "2 batches" },
+    },
+    {
+      report_id: "dead-stock",
+      name: "Dead stock",
+      covers: "Idle beyond each SKU's X days (Q17)",
+      last_run_label: "26 Sep",
+      schedule: "Monthly",
+      state: { tone: "dark", label: "6 SKUs" },
+    },
+  ],
+  alert: "SafeGuard hit 2.1% poor-rate — your verdicts feed the roll-up on the right (EF-0041 · F33).",
+  outputs: [
+    {
+      output_id: "out-1",
+      report: "Consumption",
+      generated_label: "today 07:40",
+      generated_by: "Scheduler",
+      format: "Excel",
+      sent_to: "You · Ops heads (4)",
+      state: { tone: "green", label: "Sent" },
+    },
+    {
+      output_id: "out-2",
+      report: "Vendor quality",
+      generated_label: "26 Sep 10:52",
+      generated_by: "Priya Sharma",
+      format: "CSV + PDF",
+      sent_to: "Purchasing · Vikram",
+      state: { tone: "green", label: "Sent" },
+    },
+    {
+      output_id: "out-3",
+      report: "Dead stock",
+      generated_label: "26 Sep 09:00",
+      generated_by: "Scheduler",
+      format: "Excel",
+      sent_to: "You · Deepa Nair",
+      state: { tone: "blue", label: "Ready" },
+    },
+  ],
+  preview: {
+    title: "Vendor quality roll-up",
+    period: "Sep 2026 · month to date",
+    scope: "WH-BLR-01 · your site",
+    fail_lines: "3 · ₹2,140 claims open",
+    month_label: "September",
+    suppliers: [
+      { vendor: "SafeGuard", poor_count: 2, poor_rate: "2.1", breach: true, last_event: "EF-0041" },
+      { vendor: "Deccan Industrial", poor_count: 1, poor_rate: "0.8", breach: false, last_event: "EF-0038" },
+      { vendor: "Shakti Bearings", poor_count: 0, poor_rate: "0.2", breach: false, last_event: null },
+      { vendor: "Chennai Lubricants", poor_count: 0, poor_rate: "0.4", breach: false, last_event: null },
+    ],
+  },
+  scheduled_deliveries: [
+    "Consumption — Mon 07:40 · you + Ops heads",
+    "Expiry due — daily 06:00 · store desk",
+    "Vendor quality — on every verdict · purchasing",
+  ],
+};

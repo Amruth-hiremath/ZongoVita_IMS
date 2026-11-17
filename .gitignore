@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+.hypothesis/
+*.egg-info/
+dist/
+build/
+.coverage
+htmlcov/
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+
+# Local runtime state (secrets, object storage, env files) - never committed
+.local/
+.env
+.env.*
+!.env.example
+
+# Editors / OS
+.idea/
+.vscode/
+*.swp
+Thumbs.db
+.DS_Store
+
+# Tooling state of the coding assistant (launch config, local settings)
+.claude/
+
+# TypeScript incremental build info
+*.tsbuildinfo
+next-env.d.ts
+
+# Playwright output
+test-results/
+playwright-report/
+.screens/

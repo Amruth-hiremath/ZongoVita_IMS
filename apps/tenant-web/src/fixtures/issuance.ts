@@ -1,0 +1,97 @@
+/** FIXTURE: sample data from wireframe F28. Temporary; see src/data/source.ts. */
+import type { LockLedger, LocksOverview } from "@/data/issuance";
+
+export const locksOverview: LocksOverview = {
+  active_locks: 3,
+  awaiting_pick: 2,
+  released_today: 1,
+  units_locked: "30",
+  units_locked_by_uom: [
+    { qty: "6", uom: "pcs" },
+    { qty: "24", uom: "pairs" },
+  ],
+  lock_timeout_hours: 48,
+  over_issue_attempts: 0,
+  rows: [
+    {
+      item_code: "SPB-6204",
+      name: "Ball Bearing 6204-2RS",
+      location_code: "WH-BLR-01",
+      on_hand: "52",
+      locked: "6",
+      quarantined: "0",
+      free: "46",
+      lock_ref: "REQ-0417",
+      state: { kind: "locked_awaiting_pick", label: "Locked · awaiting pick" },
+    },
+    {
+      item_code: "GLV-NIT-L",
+      name: "Safety Gloves Nitrile (L)",
+      location_code: "ST-MAA-01",
+      on_hand: "60",
+      locked: "24",
+      quarantined: "0",
+      free: "36",
+      lock_ref: "REQ-0413",
+      state: { kind: "locked_awaiting_pick", label: "Locked · awaiting pick" },
+    },
+    {
+      item_code: "VBLT-A43",
+      name: "V-Belt A-43",
+      location_code: "WH-BLR-01",
+      on_hand: "96",
+      locked: "0",
+      quarantined: "2",
+      free: "94",
+      lock_ref: "RET-0421",
+      state: { kind: "quarantined_validation_pending", label: "Quarantined · validation pending" },
+    },
+    {
+      item_code: "HYD-SK40",
+      name: "Hydraulic Seal Kit 40 mm",
+      location_code: "WH-PUN-02",
+      on_hand: "16",
+      locked: "0",
+      quarantined: "0",
+      free: "16",
+      lock_ref: "REQ-0409",
+      state: { kind: "lock_released_on_issue", label: "Lock released on issue" },
+    },
+  ],
+};
+
+export const lockLedger: LockLedger = {
+  rows: [
+    {
+      request_ref: "REQ-0417",
+      item_code: "SPB-6204",
+      location_code: "WH-BLR-01",
+      qty: "6",
+      uom: "pcs",
+      locked_at_label: "26 Sep 10:12",
+      locked_by: "first approval",
+      state: { kind: "awaiting_pick", label: "Awaiting pick" },
+    },
+    {
+      request_ref: "REQ-0413",
+      item_code: "GLV-NIT-L",
+      location_code: "ST-MAA-01",
+      qty: "24",
+      uom: "pairs",
+      locked_at_label: "24 Sep 16:20",
+      locked_by: "first approval",
+      state: { kind: "awaiting_pick", label: "Awaiting pick" },
+    },
+    {
+      request_ref: "REQ-0409",
+      item_code: "HYD-SK40",
+      location_code: "WH-PUN-02",
+      qty: "2",
+      uom: "kits",
+      locked_at_label: "23 Sep 11:04",
+      locked_by: "first approval",
+      state: { kind: "released", label: "Released" },
+    },
+  ],
+  lifecycle: { created_by: "Priya Sharma", created_at_label: "26 Sep 10:12" },
+};

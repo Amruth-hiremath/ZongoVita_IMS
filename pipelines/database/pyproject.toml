@@ -1,0 +1,24 @@
+[project]
+name = "ims-db-pipeline"
+version = "0.1.0"
+description = "ZongoVita IMS database pipeline: provisioning DDL, schema migrations, partition maintenance (CI/CD only)"
+requires-python = ">=3.13"
+dependencies = [
+    "ims-contracts",
+    "ims-common",
+    "ims-core",
+    "ims-platform",
+    "sqlalchemy[asyncio]>=2.0.36",
+    "psycopg[binary]>=3.2",
+    "alembic>=1.14",
+]
+
+[project.scripts]
+ims-db-pipeline = "ims_db_pipeline.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["ims_db_pipeline"]

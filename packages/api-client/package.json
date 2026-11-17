@@ -1,0 +1,16 @@
+{
+  "name": "@ims/api-client",
+  "version": "0.1.0",
+  "private": true,
+  "description": "TypeScript side of the IMS API contracts. Hand-mirrored from py-contracts until Core's OpenAPI document exists; generated from it afterwards (LLD section 2)",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0"
+  }
+}

@@ -1,0 +1,53 @@
+# Local development and test stack. NOT a production topology.
+#
+# Mirrors the parts of the design that application code depends on:
+#   - one PostgreSQL cluster holding the Control-Plane database and customer databases
+#   - a PgBouncer pooler in transaction mode in front of it (AD-80, LD-75)
+# Core, Workers and the Platform Service connect through the pooler; migrations, provisioning
+# DDL and monitoring connect directly.
+#
+# The same file runs two independent stacks, told apart by the compose project name:
+#
+#   development   docker compose -p ims-local up -d --wait            direct 54320, pooler 64320
+#   tests         see README ("Running the tests")                    direct 54321, pooler 64321
+#
+# The test stack is marked with ims.cluster_purpose=test. The test suite wipes and recreates
+# every IMS database and role at the start of a run and refuses to do so on any other cluster.
+#
+# All credentials here are throwaway local values.
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: ims_local_dev
+    command:
+      - postgres
+      - -c
+      - max_connections=400
+      - -c
+      - password_encryption=scram-sha-256
+      - -c
+      - ims.cluster_purpose=${IMS_CLUSTER_PURPOSE:-dev}
+    ports:
+      - "127.0.0.1:${IMS_PG_PORT:-54320}:5432"
+    volumes:
+      - ims_pgdata:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  pgbouncer:
+    build:
+      context: ./pgbouncer
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${IMS_POOLER_PORT:-64320}:6432"
+
+volumes:
+  ims_pgdata:

@@ -1,0 +1,98 @@
+/** FIXTURE: the item drawn on wireframe F09. Temporary; see src/data/source.ts. */
+import type { ItemDetail } from "@/data/item-detail";
+
+const SPB_6204: ItemDetail = {
+  item_code: "SPB-6204",
+  name: "Ball Bearing 6204-2RS",
+  category: "Spares",
+  uom: "pcs",
+  cost: "185",
+  lifecycle: "Active",
+  created_at: "2026-08-12",
+  created_by: "Arjun Mehta",
+  has_image: true,
+  batch_tracked: true,
+  expiry_tracked: true,
+  reorder_rule: "custom",
+  below_min_locations: ["WH-PUN-02"],
+  attributes: [
+    { name: "Brand", value: "SKF" },
+    { name: "Grade", value: "ABEC-3" },
+    { name: "Size", value: "20 × 47 × 14 mm" },
+    { name: "Hazard class", value: "None" },
+  ],
+  thresholds: {
+    min: "40",
+    max: "200",
+    internal_po_lead_days: 3,
+    vendor_lead_days: 9,
+    avg_daily_use: "6",
+    formula: "(Use × Lead) + Safety − On hand",
+  },
+  stock: [
+    {
+      location_code: "WH-BLR-01",
+      location_name: "Bengaluru",
+      on_hand: "52",
+      free: "46",
+      locked: "6",
+      quarantined: "0",
+      value: "9620",
+      status: { kind: "healthy", label: "Healthy" },
+    },
+    {
+      location_code: "WH-PUN-02",
+      location_name: "Pune",
+      on_hand: "38",
+      free: "38",
+      locked: "0",
+      quarantined: "0",
+      value: "7030",
+      status: { kind: "below_min", label: "Below min" },
+    },
+    {
+      location_code: "ST-MAA-01",
+      location_name: "Chennai",
+      on_hand: "26",
+      free: "26",
+      locked: "0",
+      quarantined: "0",
+      value: "4810",
+      status: { kind: "healthy", label: "Healthy" },
+    },
+  ],
+  lots: [
+    {
+      lot_no: "LOT-SPB-0124",
+      manufactured: "Jan 2026",
+      expires_on: null,
+      qty: "52",
+      location_code: "WH-BLR-01",
+      status: { kind: "fresh", label: "Fresh" },
+    },
+    {
+      lot_no: "LOT-SPB-0125",
+      manufactured: "Feb 2026",
+      expires_on: null,
+      qty: "26",
+      location_code: "ST-MAA-01",
+      status: { kind: "fresh", label: "Fresh" },
+    },
+    {
+      lot_no: "LOT-CO-0326",
+      manufactured: "Mar 2026",
+      expires_on: "2026-11-10",
+      qty: "24",
+      location_code: "WH-BLR-01",
+      status: { kind: "expiring", label: "46 days" },
+    },
+  ],
+  expiry_notice: "LOT-CO-0326 crosses the 30-day window on 07 Oct — expiry alerts fire at 60 / 30 / 7 days (FB-05).",
+  movements: [
+    { title: "Issue · WO-2214 · −4 pcs", meta: "Suresh Patil · 26 Sep 09:42 · BLR-01" },
+    { title: "Receipt · GRN-2081 · +8 drums", meta: "Suresh Patil · 26 Sep 08:15 · BLR-01" },
+    { title: "Lock · REQ-0417 · 6 pcs", meta: "Priya Sharma · 26 Sep 10:12 · BLR-01" },
+  ],
+};
+
+export const itemDetails: Record<string, ItemDetail> = { "SPB-6204": SPB_6204 };

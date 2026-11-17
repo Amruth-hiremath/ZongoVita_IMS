@@ -1,0 +1,28 @@
+{
+  "name": "zongovita-ims",
+  "private": true,
+  "description": "ZongoVita IMS monorepo: JavaScript workspaces (Next.js apps and shared packages)",
+  "workspaces": [
+    "apps/*",
+    "packages/ui",
+    "packages/api-client"
+  ],
+  "scripts": {
+    "dev:tenant": "npm run dev -w @ims/tenant-web",
+    "dev:platform": "npm run dev -w @ims/platform-console",
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "test:e2e": "playwright test",
+    "screens:capture": "playwright test e2e/tenant-screens.spec.ts e2e/platform-screens.spec.ts -g \"renders\""
+  },
+  "engines": {
+    "node": ">=20.9.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.65.1",
+    "typescript": "^5.9.0",
+    "@types/node": "^24"
+  }
+}
