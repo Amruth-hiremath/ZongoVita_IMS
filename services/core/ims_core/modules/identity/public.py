@@ -2,12 +2,23 @@
 
 from __future__ import annotations
 
+from uuid import UUID
+
 from ims_common.problem import DomainError
 from ims_contracts.enums import PrincipalType
 from ims_contracts.errors import ErrorCode
 from ims_core.kernel.authn import AccessClaims
 from ims_core.kernel.uow import UnitOfWork
 from ims_core.modules.identity import repository
+from ims_core.modules.identity.repository import (
+    ApiClientProfile,
+    UserProfile,
+    list_api_client_profiles,
+    list_profiles,
+    read_api_client_profile,
+    read_profile,
+    read_profiles,
+)
 from ims_core.modules.identity.service import (
     CreatedApiClient,
     CreatedUser,
@@ -17,12 +28,20 @@ from ims_core.modules.identity.service import (
 )
 
 __all__ = [
+    "ApiClientProfile",
     "CreatedApiClient",
     "CreatedUser",
     "IdentityService",
     "PrincipalStage",
     "SessionTokens",
     "SignInChallenge",
+    "UserProfile",
+    "api_client_rate_limit",
+    "list_api_client_profiles",
+    "list_profiles",
+    "read_api_client_profile",
+    "read_profile",
+    "read_profiles",
 ]
 
 
@@ -58,3 +77,9 @@ class PrincipalStage:
                 raise DomainError(ErrorCode.PRINCIPAL_INACTIVE)
             return
         raise DomainError(ErrorCode.PRINCIPAL_INACTIVE)
+
+
+async def api_client_rate_limit(uow: UnitOfWork, client_id: UUID) -> int | None:
+    """The client's own requests-per-minute limit (iam.api_clients.rate_limit_per_minute)."""
+    client = await repository.get_api_client(uow.db, client_id)
+    return client.rate_limit_per_minute if client is not None else None

@@ -6,9 +6,9 @@ A test keeps ``SCHEMA_HEAD`` equal to the head of services/core/migrations.
 """
 
 #: Head revision of services/core/migrations for this release.
-SCHEMA_HEAD = "0002"
+SCHEMA_HEAD = "0003"
 
 #: Previous release's head, or None for the first release.
-SCHEMA_PREVIOUS: str | None = "0001"
+SCHEMA_PREVIOUS: str | None = "0002"
 
 SCHEMA_SUPPORTED = frozenset(v for v in (SCHEMA_HEAD, SCHEMA_PREVIOUS) if v is not None)

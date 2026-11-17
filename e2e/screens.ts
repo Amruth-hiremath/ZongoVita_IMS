@@ -4,7 +4,7 @@
  * One table drives the smoke tests and the screenshot capture, so a frame cannot be
  * implemented without being checked. `title` is the page heading exactly as drawn.
  */
-export type Persona = "type1" | "type2" | "type3";
+export type Persona = "type1" | "type2" | "type3" | "type3_audit";
 
 export interface Screen {
   /** Wireframe frame, as named in the ZIP. */
@@ -55,7 +55,7 @@ export const tenantScreens: Screen[] = [
   { frame: "F44-Reports-Type-2", route: "/reports", persona: "type2", title: "Reports — Catalog & Deliveries" },
   { frame: "F24-Audit-Trail-v1", route: "/audit", persona: "type1", title: "Audit Trail" },
   { frame: "F24-Audit-Trail", route: "/audit", persona: "type2", title: "Audit Trail" },
-  { frame: "F50-Store-Audit-Type-3", route: "/audit", persona: "type3", title: "Audit Trail — WH-BLR-01" },
+  { frame: "F50-Store-Audit-Type-3", route: "/audit", persona: "type3_audit", title: "Audit Trail — WH-BLR-01" },
 ];
 
 /** The same screens reached through their own address rather than the sidebar entry. */
@@ -79,6 +79,6 @@ export const tenantUnknownRecords: { route: string; persona: Persona }[] = [
 
 export const platformScreens: Screen[] = [
   { frame: "F51-Platform-Overview", route: "/overview", persona: null, title: "Platform Overview" },
-  { frame: "F52-Platform-Licenses", route: "/licenses", persona: null, title: "Licenses & Plans" },
+  { frame: "F52-Platform-Licenses", route: "/licenses", persona: null, title: "Licenses" },
   { frame: "F53-Platform-Config", route: "/config", persona: null, title: "Platform Config" },
 ];

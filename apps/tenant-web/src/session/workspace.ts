@@ -1,6 +1,8 @@
 import { hasPermission, type Me } from "@ims/api-client";
 import type { NavItem } from "@ims/ui";
 
+import { canOpen } from "./access";
+
 /**
  * The wireframes draw three sets of screens, labelled Type 1, Type 2 and Type 3. The LLD makes
  * workflow actors privileges, not fixed roles (HLD section 3; LLD 15 "permission-aware UI"),
@@ -62,8 +64,13 @@ const menus: Record<Workspace, NavItem[]> = {
   requester: [{ label: "Dashboard", href: "/dashboard", icon: "dashboard" }],
 };
 
-export function menuFor(workspace: Workspace): NavItem[] {
-  return menus[workspace];
+/**
+ * The workspace's menu as drawn, without the entries whose screens the person may not open
+ * (src/session/access.ts). The LLD's effective permissions decide; the drawing gives the order,
+ * labels and icons.
+ */
+export function menuFor(workspace: Workspace, me: Me): NavItem[] {
+  return menus[workspace].filter((item) => canOpen(me, workspace, item.href));
 }
 
 /** "TYPE 1 · ARJUN MEHTA": the small-caps line at the foot of the sidebar. */

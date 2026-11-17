@@ -40,3 +40,6 @@ next-env.d.ts
 test-results/
 playwright-report/
 .screens/
+
+# Browser-test sign-in state (test credentials and session cookies)
+e2e/.auth/

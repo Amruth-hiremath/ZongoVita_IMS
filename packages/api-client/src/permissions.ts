@@ -1,7 +1,7 @@
 /**
  * Permission catalogue (LLD section 7): one code per action on a resource, module.resource.action.
- * Site-scoped permissions are marked. The catalogue is code-defined in Core; this list is the
- * LLD's table and must match Core's once the access module exists.
+ * Site-scoped permissions are marked. Mirrors Core's code-defined catalogue
+ * (ims_contracts/permissions.py); a static test keeps the two equal.
  */
 export const PERMISSIONS = {
   "catalog.item.view": { siteScoped: false },
@@ -76,3 +76,57 @@ export const RESERVED_TO_SUPER_ADMIN: readonly PermissionCode[] = [
   "access.support.grant",
   "access.recovery_approver.manage",
 ];
+
+export const ALL_PERMISSION_CODES = Object.keys(PERMISSIONS) as PermissionCode[];
+
+/**
+ * Seeded roles (LLD 5.1, "Seeded roles"), as written at provisioning. Customers may edit every
+ * seeded role except Super Admin (#10), so these are defaults, not facts about a customer: the
+ * web app reads a principal's real permissions from GET /ui/v1/me. Used by the sample personas.
+ */
+export const USER_TYPE_2: readonly PermissionCode[] = [
+  "alerts.alert.view",
+  "audit.log.view",
+  "catalog.item.view",
+  "catalog.taxonomy.approve",
+  "counts.adjustment.approve",
+  "integration.sync.view",
+  "inventory.ledger.view",
+  "inventory.stock.view",
+  "issuance.request.approve",
+  "issuance.request.view_all",
+  "purchasing.record.view",
+  "purchasing.vendor.manage",
+  "purchasing.vendor.view",
+  "quality.register.view",
+  "replenishment.formula.manage",
+  "replenishment.planning.view",
+  "replenishment.threshold.approve",
+  "reporting.report.view",
+  "returns.verdict.decide",
+  "transfers.transfer.approve",
+  "workflow.task.view",
+];
+
+export const USER_TYPE_3: readonly PermissionCode[] = [
+  "catalog.item.view",
+  "counts.session.count",
+  "inventory.stock.view",
+  "issuance.issue.fulfil",
+  "issuance.request.create",
+  "receiving.grn.create",
+  "receiving.grn.inspect",
+  "receiving.grn.post",
+  "returns.return.receive",
+  "returns.return.validate",
+  "transfers.transfer.create",
+  "transfers.transfer.dispatch",
+  "transfers.transfer.receive",
+];
+
+export const USER_TYPE_4: readonly PermissionCode[] = ["issuance.request.create", "returns.return.create"];
+
+/** User Type 1: every permission except those reserved to the Super Admin. */
+export const USER_TYPE_1: readonly PermissionCode[] = ALL_PERMISSION_CODES.filter(
+  (code) => !RESERVED_TO_SUPER_ADMIN.includes(code),
+);

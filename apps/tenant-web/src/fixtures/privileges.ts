@@ -1,43 +1,58 @@
-/** FIXTURE: the matrix drawn in wireframe F36. Temporary; see src/data/source.ts. */
-import type { MatrixCapability, PrivilegeMatrix } from "@/data/privileges";
+/**
+ * FIXTURE: the privilege matrix as Core seeds it at provisioning (LLD 5.1): Super Admin and the
+ * four user types with their default permissions. Temporary; see src/data/source.ts.
+ */
+import {
+  ALL_PERMISSION_CODES,
+  PERMISSIONS,
+  RESERVED_TO_SUPER_ADMIN,
+  USER_TYPE_1,
+  USER_TYPE_2,
+  USER_TYPE_3,
+  USER_TYPE_4,
+  type PermissionCode,
+} from "@ims/api-client";
 
-const capabilities: MatrixCapability[] = [
-  { capability_id: "raise_issuance", label: "Raise issuance request" },
-  { capability_id: "approve_requests", label: "Approve requests · locks stock" },
-  { capability_id: "issue_from_store", label: "Issue from store · barcode" },
-  { capability_id: "receive_stock", label: "Receive stock · GRN" },
-  { capability_id: "returns_intake", label: "Returns intake" },
-  { capability_id: "quarantine_verdict", label: "Quarantine verdict" },
-  { capability_id: "edit_items", label: "Add / edit items" },
-  { capability_id: "manage_categories", label: "Manage categories" },
-  { capability_id: "manage_vendors", label: "Manage vendors & purchase recs" },
-  { capability_id: "view_reports", label: "View reports & audit trail" },
-  { capability_id: "manage_users", label: "Manage users" },
-  { capability_id: "configure_privileges", label: "Configure privileges" },
-];
+import type { MatrixRole, PrivilegeMatrix } from "@/data/privileges";
 
-const grants: Record<string, string[]> = {
-  "role-type-1": capabilities.map((capability) => capability.capability_id),
-  "role-type-2": [
-    "raise_issuance",
-    "approve_requests",
-    "receive_stock",
-    "quarantine_verdict",
-    "edit_items",
-    "view_reports",
-  ],
-  "role-type-3": ["raise_issuance", "issue_from_store", "receive_stock", "returns_intake", "view_reports"],
-  "role-type-4": ["raise_issuance", "returns_intake", "view_reports"],
-};
+function seeded(n: 1 | 2 | 3 | 4, permissions: readonly PermissionCode[], assigned: number): MatrixRole {
+  return {
+    id: `018f6f2a-2000-7000-8000-00000000000${n}`,
+    code: `user_type_${n}`,
+    name: `User Type ${n}`,
+    kind: "user_type",
+    user_type_no: n,
+    is_super_admin: false,
+    editable: true,
+    permissions: [...permissions],
+    assigned_principals: assigned,
+    version: 1,
+  };
+}
 
-export const privilegeMatrix: PrivilegeMatrix = {
+export const privilegeMatrix: Omit<PrivilegeMatrix, "source"> = {
+  permissions: ALL_PERMISSION_CODES.map((code) => ({
+    code,
+    module: code.split(".")[0]!,
+    site_scoped: PERMISSIONS[code].siteScoped,
+    reserved_to_super_admin: RESERVED_TO_SUPER_ADMIN.includes(code),
+  })),
   roles: [
-    { role_id: "role-type-1", name: "Type 1", summary: "super admin" },
-    { role_id: "role-type-2", name: "Type 2", summary: "approve" },
-    { role_id: "role-type-3", name: "Type 3", summary: "request · issue" },
-    { role_id: "role-type-4", name: "Type 4", summary: "view · request" },
+    {
+      id: "018f6f2a-2000-7000-8000-000000000000",
+      code: "super_admin",
+      name: "Super Admin",
+      kind: "super_admin",
+      user_type_no: null,
+      is_super_admin: true,
+      editable: false,
+      permissions: [...ALL_PERMISSION_CODES],
+      assigned_principals: 1,
+      version: 1,
+    },
+    seeded(1, USER_TYPE_1, 1),
+    seeded(2, USER_TYPE_2, 1),
+    seeded(3, USER_TYPE_3, 4),
+    seeded(4, USER_TYPE_4, 10),
   ],
-  capabilities,
-  grants,
-  seeded_defaults: grants,
 };

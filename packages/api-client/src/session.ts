@@ -2,12 +2,13 @@ import type { LicenceState } from "./licence";
 import type { PermissionCode } from "./permissions";
 
 /**
- * Shape the web app expects from GET /ui/v1/me (LLD section 7: "returns effective permissions
- * per site and the licence state"; section 15: licence banners and permission-aware UI).
+ * GET /ui/v1/me (LLD section 7: "returns effective permissions per site and the licence state";
+ * section 15: licence banners and permission-aware UI). Mirrors Core's MeResponse
+ * (services/core/ims_core/modules/access/schemas.py); replace with the OpenAPI-generated type
+ * when Core publishes it.
  *
- * PROVISIONAL: the endpoint arrives with the access module. Field names follow the API
- * conventions of LLD section 12 (snake_case, ISO 8601 UTC). Replace with the OpenAPI-generated
- * type when Core publishes it.
+ * Until the organisation module (unit 4) exists, Core returns no sites and no home site; until
+ * notifications exist (unit 10), unread_notifications is null.
  */
 export interface Me {
   principal: {
@@ -32,7 +33,8 @@ export interface Me {
     gxp_mode: boolean;
     modules: string[];
   };
-  unread_notifications: number;
+  /** null until Core has notifications (unit 10). */
+  unread_notifications: number | null;
 }
 
 export function hasPermission(me: Me, code: PermissionCode, siteId?: string): boolean {

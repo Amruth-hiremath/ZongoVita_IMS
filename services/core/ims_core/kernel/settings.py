@@ -23,6 +23,8 @@ class CoreSettings(BaseSettings):
     environment: Environment = "local"
     instance: str = Field(default_factory=socket.gethostname)
     log_level: str = "INFO"
+    bind_host: str = "0.0.0.0"  # noqa: S104 - container default; behind the load balancer
+    bind_port: int = 8080
 
     # Identity of this service and the keys it uses (references into the secrets store).
     service_name: str = "ims-core"

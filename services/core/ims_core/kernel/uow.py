@@ -17,6 +17,7 @@ from ims_common.clock import Clock
 from ims_core.kernel.audit import AuditWriter
 from ims_core.kernel.context import TenantContext
 from ims_core.kernel.db import DatabaseRouter
+from ims_core.kernel.grants import NO_GRANTS, Grants
 from ims_core.kernel.outbox import OutboxWriter
 
 log = logging.getLogger("ims.uow")
@@ -33,6 +34,9 @@ class UnitOfWork:
         self.clock = clock
         self.audit = AuditWriter(ctx, conn)
         self.events = OutboxWriter(ctx, conn)
+        #: Effective permissions of the principal, set by pipeline step 8 (authorise). Jobs and
+        #: credential flows act as the system or as a just-identified user and have none.
+        self.grants: Grants = NO_GRANTS
         self._after_commit: list[AfterCommit] = []
 
     def on_commit(self, callback: AfterCommit) -> None:

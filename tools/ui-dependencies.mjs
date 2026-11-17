@@ -1,8 +1,9 @@
 // Lists what the web apps still need from the backend, straight from the code.
 //
-// Every read goes through fromFixture({ endpoint, note }, ...) in src/data, and every action
-// that would change data is an <ActionButton endpoint="..."> (Docs/UI_Implementation.md,
-// rule 4). This script collects both and prints the Markdown tables used in that document:
+// Every read goes through fromFixture({ endpoint, note }, ...) or, once Core has the endpoint,
+// fromCore({ endpoint, note }, ...) in src/data; every action that would change data and is not
+// connected is an <ActionButton endpoint="..."> (Docs/UI_Implementation.md, rule 4). This script
+// collects all three and prints the Markdown tables used in that document:
 //
 //   node tools/ui-dependencies.mjs            print the tables
 //   node tools/ui-dependencies.mjs --write    replace the generated section of the document
@@ -46,6 +47,7 @@ function routeOf(appDir, file) {
 
 function collect(app) {
   const reads = [];
+  const connected = [];
   const actions = new Map();
   for (const file of walk(join(root, app.dir))) {
     const source = readFileSync(file, "utf8");
@@ -56,6 +58,10 @@ function collect(app) {
       for (const match of source.matchAll(pattern)) {
         reads.push({ endpoint: literal(match[1]), note: match[2] ? literal(match[2]) : "", file: where });
       }
+      const live = /fromCore(?:<[^(]*>)?\(\s*\{\s*endpoint:\s*([\s\S]*?)(?:,\s*note:\s*([\s\S]*?))?,?\s*\}\s*,/g;
+      for (const match of source.matchAll(live)) {
+        connected.push({ endpoint: literal(match[1]), note: match[2] ? literal(match[2]) : "", file: where });
+      }
     }
     for (const match of source.matchAll(/\bendpoint=(?:"([^"]+)"|\{`([^`]+)`\}|\{"([^"]+)"\})/g)) {
       const endpoint = (match[1] ?? match[2] ?? match[3]).replace(/\$\{[^}]*\}/g, "{…}");
@@ -64,8 +70,10 @@ function collect(app) {
       actions.get(endpoint).add(screen);
     }
   }
-  reads.sort((a, b) => a.endpoint.localeCompare(b.endpoint) || a.file.localeCompare(b.file));
-  return { reads, actions: [...actions].sort(([a], [b]) => a.localeCompare(b)) };
+  const byEndpoint = (a, b) => a.endpoint.localeCompare(b.endpoint) || a.file.localeCompare(b.file);
+  reads.sort(byEndpoint);
+  connected.sort(byEndpoint);
+  return { reads, connected, actions: [...actions].sort(([a], [b]) => a.localeCompare(b)) };
 }
 
 const cell = (text) => text.replaceAll("|", "\\|").replaceAll("\n", " ");
@@ -73,8 +81,14 @@ const cell = (text) => text.replaceAll("|", "\\|").replaceAll("\n", " ");
 function render() {
   const lines = [];
   for (const app of apps) {
-    const { reads, actions } = collect(app);
+    const { reads, connected, actions } = collect(app);
     lines.push(`### ${app.name}`, "");
+    if (connected.length) {
+      lines.push(`Reads connected to IMS Core (${connected.length}):`, "");
+      lines.push("| Endpoint | Data function file | Notes |", "|---|---|---|");
+      for (const read of connected) lines.push(`| \`${cell(read.endpoint)}\` | \`${read.file}\` | ${cell(read.note)} |`);
+      lines.push("");
+    }
     lines.push(`Reads served from sample data (${reads.length}):`, "");
     lines.push("| Endpoint | Data function file | What the screen needs beyond the LLD's description |", "|---|---|---|");
     for (const read of reads) lines.push(`| \`${cell(read.endpoint)}\` | \`${read.file}\` | ${cell(read.note)} |`);

@@ -21,9 +21,7 @@ import type { Metadata } from "next";
 import { ActionButton } from "@/components/action-button";
 import { getLicencesPage } from "@/data/licences";
 
-export const metadata: Metadata = { title: "Licenses & Plans" };
-
-const money = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 });
+export const metadata: Metadata = { title: "Licenses" };
 
 /** The three steps of "How the license check works", as drawn. */
 const checkSteps = [
@@ -32,56 +30,32 @@ const checkSteps = [
   { title: "Route to that customer's database", detail: "never a shared one — by construction" },
 ];
 
-/** F52 Licenses & Plans. */
+/**
+ * F52 Licenses. The frame's price-plan cards, billing export, plan column and renewal-and-dunning
+ * panel are not part of the HLD or LLD and are left out; the expiry panel shows the licence states
+ * the design defines instead (LLD 6.4; Docs/UI_Implementation.md section 10).
+ */
 export default async function LicensesPage() {
   const page = await getLicencesPage();
 
   return (
     <>
       <PageHeader
-        title="Licenses & Plans"
+        title="Licenses"
         subtitle="The license registry — one row per customer: validity · sites · users · modules, mapped to that customer's database (FB-20)"
         actions={
-          <>
-            <ActionButton endpoint="GET /platform/v1/licences (billing export)" className="w-[119px] bg-none bg-white">
-              Billing export
-            </ActionButton>
-            <ActionButton endpoint="POST /platform/v1/licences" variant="primary" className="w-[124px]">
-              Assign license
-            </ActionButton>
-          </>
+          <ActionButton endpoint="POST /platform/v1/licences" variant="primary" className="w-[124px]">
+            Assign license
+          </ActionButton>
         }
       />
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        {page.plans.map((plan) => (
-          <Card key={plan.plan_id} className="px-5 pb-4 pt-3.5">
-            <div className="flex items-start justify-between gap-3">
-              <h2 className="pt-0.5 text-[15px] font-semibold text-gray-900">{plan.name}</h2>
-              <Pill tone={plan.badge.tone} className={cn(plan.badge.tone === "gray" && "text-gray-500")}>
-                {plan.badge.label}
-              </Pill>
-            </div>
-            <div className="mt-2 flex flex-wrap items-baseline gap-x-10 gap-y-1">
-              <span className="tabular whitespace-nowrap text-[22px] font-bold text-gray-900">₹ {money.format(Number(plan.price_per_seat_month))}</span>
-              <span className="text-[11px] text-gray-500">per seat / month</span>
-            </div>
-            <ul className="mt-3 text-[11.5px] leading-[14px] text-gray-700">
-              {plan.entitlements.map((line) => (
-                <li key={line}>{line}</li>
-              ))}
-            </ul>
-          </Card>
-        ))}
-      </div>
-
-      <SectionLabel className="mb-2 mt-5">License registry — one row per customer, one database per customer</SectionLabel>
+      <SectionLabel className="mb-2">License registry — one row per customer, one database per customer</SectionLabel>
       <Table>
         <THead>
           <TR>
             <TH>Ent</TH>
             <TH>Company</TH>
-            <TH>Plan</TH>
             <TH>Valid till</TH>
             <TH align="center">Sites</TH>
             <TH align="center">Users</TH>
@@ -95,12 +69,11 @@ export default async function LicensesPage() {
             <TR key={row.enterprise_code} className="h-12">
               <TD className="whitespace-nowrap text-[12.5px] text-gray-700">{row.enterprise_code}</TD>
               <TD className="whitespace-nowrap text-gray-700">{row.company}</TD>
-              <TD muted>{row.plan}</TD>
               <TD muted className="whitespace-nowrap">
                 {row.valid_till_label}
               </TD>
               <TD muted align="center" numeric className="whitespace-nowrap">
-                {row.sites_used} / {row.sites_licensed ?? "unlimited"}
+                {row.sites_used} / {row.sites_licensed}
               </TD>
               <TD muted align="center" numeric className="whitespace-nowrap">
                 {row.users_used} / {row.users_licensed}
@@ -145,28 +118,28 @@ export default async function LicensesPage() {
             <NoteBox tone="red" className="mt-1.5 flex items-center gap-2.5 py-2">
               <AlertTriangle aria-hidden className="size-4 shrink-0 text-red-700" strokeWidth={1.6} />
               <p className="text-[11px] text-gray-700">
-                EXPIRED → every site of that customer is blocked — logins and API alike; data intact; renewal lifts the block.
+                PAST THE END DATE → grace period (14 d by default), then read-only: records stay viewable, changes are refused except emergency issue; renewal restores full access.
               </p>
             </NoteBox>
           </CardBody>
         </Card>
 
         <Card>
-          <CardHeader title={`Renewal & dunning — ${page.renewal.enterprise_code}`} />
+          <CardHeader title={`Licence expiry — ${page.expiry.enterprise_code}`} />
           <CardBody className="pt-5">
-            <p className="text-[13px] font-semibold text-gray-900">{page.renewal.company}</p>
+            <p className="text-[13px] font-semibold text-gray-900">{page.expiry.company}</p>
             <Pill tone="amber" className="mt-1">
-              {page.renewal.status_label}
+              {page.expiry.status_label}
             </Pill>
             <dl className="mt-1 [&_dd]:text-gray-700">
-              <KeyValue label="Reminder" className="py-1">
-                {page.renewal.reminder}
+              <KeyValue label="Valid until" className="py-1">
+                {page.expiry.valid_until}
               </KeyValue>
               <KeyValue label="Grace period" className="py-1">
-                {page.renewal.grace_period}
+                {page.expiry.grace_until}
               </KeyValue>
-              <KeyValue label="Auto-suspend" className="py-1">
-                {page.renewal.auto_suspend}
+              <KeyValue label="After grace" className="py-1">
+                {page.expiry.after_grace}
               </KeyValue>
             </dl>
           </CardBody>

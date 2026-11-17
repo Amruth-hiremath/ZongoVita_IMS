@@ -1,41 +1,50 @@
 import "server-only";
 
+import type { PermissionCode } from "@ims/api-client";
+
 import { privilegeMatrix } from "@/fixtures/privileges";
+import { sessionSource } from "@/session/config";
 
-import { fromFixture } from "./source";
+import { fromCore } from "./source";
 
-export interface MatrixRole {
-  role_id: string;
-  /** "Type 1". */
-  name: string;
-  /** Short description under the name ("super admin", "request · issue"). */
-  summary: string;
+/** One row of the matrix: a permission of the LLD section 7 catalogue. */
+export interface MatrixPermission {
+  code: PermissionCode;
+  module: string;
+  site_scoped: boolean;
+  reserved_to_super_admin: boolean;
 }
 
-export interface MatrixCapability {
-  capability_id: string;
-  label: string;
+/** One column: a role, as GET /ui/v1/privilege-matrix returns it. */
+export interface MatrixRole {
+  id: string;
+  code: string;
+  name: string;
+  kind: "user_type" | "super_admin" | "custom";
+  user_type_no: number | null;
+  is_super_admin: boolean;
+  editable: boolean;
+  permissions: PermissionCode[];
+  assigned_principals: number;
+  version: number;
 }
 
 export interface PrivilegeMatrix {
+  permissions: MatrixPermission[];
   roles: MatrixRole[];
-  capabilities: MatrixCapability[];
-  /** Capability ids granted to each role, keyed by role_id. */
-  grants: Record<string, string[]>;
-  /** The seeded user-type defaults the "Reset" control restores, keyed by role_id. */
-  seeded_defaults: Record<string, string[]>;
+  /** Live from Core, or the sample matrix (seeded defaults) in `fixtures` mode. */
+  source: "core" | "fixtures";
 }
 
-/** F36 Privilege Matrix. */
+/** F36 Privilege Matrix: permissions x roles (LLD 7). */
 export function getPrivilegeMatrix(): Promise<PrivilegeMatrix> {
-  return fromFixture(
+  return fromCore<Omit<PrivilegeMatrix, "source">, PrivilegeMatrix>(
     {
       endpoint: "GET /ui/v1/privilege-matrix",
-      note:
-        "The frame groups permissions into twelve capabilities; Core's catalogue is per permission code " +
-        "(LLD section 7), so the response must either carry this grouping or the screen lists codes. " +
-        "Seeded defaults per user type are needed for 'Reset to seeded defaults'.",
+      note: "Rows are the permission catalogue grouped by the LLD's module groups; F36's twelve capability rows are not in the LLD.",
     },
-    privilegeMatrix,
+    "/privilege-matrix",
+    (matrix) => ({ ...matrix, source: "core" }),
+    () => ({ ...privilegeMatrix, source: sessionSource() }),
   );
 }

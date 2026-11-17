@@ -8,8 +8,8 @@ export const metadata: Metadata = { title: "Enterprises" };
 export default function EnterprisesPage() {
   return (
     <NoScreen title="Enterprises">
-      The wireframes contain no Enterprises screen: the Platform Console is drawn only as F51 Overview, F52 Licenses &amp;
-      Plans and F53 Platform Config.
+      The wireframes contain no Enterprises screen: the Platform Console is drawn only as F51 Overview, F52 Licenses
+      and F53 Platform Config.
     </NoScreen>
   );
 }

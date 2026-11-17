@@ -24,6 +24,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, Request, Response
 from fastapi.routing import APIRoute, iter_route_contexts
 
+from ims_contracts.permissions import ALL_CODES
 from ims_core.kernel.context import TenantContext
 from ims_core.kernel.uow import UnitOfWork
 
@@ -60,6 +61,8 @@ class Permission(Access):
     def __post_init__(self) -> None:
         if not _PERMISSION_RE.fullmatch(self.code):
             raise ValueError(f"invalid permission code: {self.code!r}")
+        if self.code not in ALL_CODES:
+            raise ValueError(f"{self.code!r} is not in the permission catalogue (ims_contracts.permissions)")
 
 
 @dataclass(frozen=True)

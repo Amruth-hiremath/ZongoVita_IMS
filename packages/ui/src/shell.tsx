@@ -26,7 +26,8 @@ export interface AppShellProps {
   footer: string;
   user: ShellUser;
   scope: ShellScope;
-  notificationCount: number;
+  /** Unread notifications; null when the count is not available (no badge is drawn). */
+  notificationCount: number | null;
   homeHref: string;
   /** Strip rendered above the top bar (licence banners, fixture-mode marker). */
   banner?: ReactNode;
@@ -84,9 +85,13 @@ export function AppShell({ nav, footer, user, scope, notificationCount, homeHref
               </Select>
             </div>
 
-            <button type="button" aria-label={`Notifications: ${notificationCount} unread`} className="relative ml-[34px] p-1.5 max-sm:ml-2">
+            <button
+              type="button"
+              aria-label={notificationCount === null ? "Notifications" : `Notifications: ${notificationCount} unread`}
+              className="relative ml-[34px] p-1.5 max-sm:ml-2"
+            >
               <Bell className="size-4 text-gray-700" strokeWidth={2} />
-              {notificationCount > 0 ? (
+              {notificationCount !== null && notificationCount > 0 ? (
                 <span className="absolute -top-1 right-0 flex size-4 items-center justify-center rounded-full bg-red-700 text-[9px] font-bold text-white">
                   {notificationCount}
                 </span>

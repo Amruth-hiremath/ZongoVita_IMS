@@ -10,8 +10,8 @@ Last updated: 17 November 2026.
 |---|---|---|
 | 1 | Tenancy, licensing and transaction foundation | Done, verified (168 tests; 175 with the UI contract checks) |
 | 2 | Identity and session: Login Directory, users, login, MFA, refresh, lockout | Done, verified (61 new tests; 236 in all) |
-| 3 | Access control: permission catalogue, roles, user types, super-admin rules, authorisation stage, rate limits, `/me` | Next |
-| 4 | Organisation (sites, locations, departments) and licence limits | Pending |
+| 3 | Access control: permission catalogue, roles, user types, super-admin rules, authorisation stage, rate limits, `/me` | Done, verified (30 new Python tests, 266 in all; 15 browser tests against the real Core) |
+| 4 | Organisation (sites, locations, departments) and licence limits | Next |
 | 5 | Platform administration API, provisioning runs, platform users | Pending |
 | 6 | Workers: job queue, outbox dispatch, work-pending index, service levels | Pending |
 | 7 | Workflow and approval engine | Pending |
@@ -20,12 +20,12 @@ Last updated: 17 November 2026.
 | 10 | Replenishment, alerts, reporting and export | Pending |
 | 11 | Integration: public API, events feed, webhooks, connectors, sandbox | Pending |
 | 12 | GxP signatures, support grants, break-glass | Pending (hooks for reason-for-change already in the kernel) |
-| 13 | Next.js apps (Tenant Web App, Platform Console) | Screens built from all 43 wireframes on sample data; each connects to Core as its backend unit lands (Docs/UI_Implementation.md) |
+| 13 | Next.js apps (Tenant Web App, Platform Console) | All 43 wireframe screens built. The Tenant Web App signs in to Core through its BFF; session, menus, screen guard, F22 and F36 are live; other screens show sample data until their units land (Docs/UI_Implementation.md) |
 | 14 | Staged migration rollout, load test, deployment artefacts | Pending |
 
 The order follows dependencies: every module needs the kernel (unit 1); authorisation needs identities (2 before 3); site-scoped permissions need sites (4); stock modules need workflow gates and the catalogue (7, 8 before 9).
 
-Git: unit 1 and the UI are committed on local `main`. Unit 2 is committed on the local branch `unit-2/identity-session`, created from `main`. Nothing is pushed.
+Git: unit 1 and the UI are committed on local `main`. Unit 2 is committed on the local branch `unit-2/identity-session`, created from `main`. Unit 3 is committed on `unit-3/access-control`, created from `unit-2/identity-session` on the product owner's instruction, so it contains units 1 and 2. Nothing is pushed.
 
 ## 2. What unit 1 delivered
 
@@ -83,9 +83,32 @@ What it is not yet: connected. Every read is served from `src/fixtures` through 
 
 Not in unit 2, deliberately: user and API-client management endpoints (they need the authorisation stage, unit 3), the Workers that activate directory entries and reconcile (unit 6), re-authentication for GxP signatures and support sessions (unit 12), rate limiting (unit 3), and the Next.js sign-in, MFA and activation screens (no wireframes exist; see U-06).
 
+## 2c. What unit 3 delivered
+
+| Area | Where | Design reference |
+|---|---|---|
+| Code-defined permission catalogue (62 codes, site scope, three reserved to Super Admin) and the seeded roles, shared by Core, the database pipeline and the web app (a static test keeps the TypeScript mirror equal) | `packages/py-contracts/ims_contracts/permissions.py`, `packages/api-client/src/permissions.ts` | LLD 5.1, 7; AD-45 |
+| Customer schema: `iam.permission_catalog`, `iam.roles`, `iam.role_permissions`, `iam.role_assignments`, `iam.access_version`, with the built-in rules in the database: exactly one super admin (partial unique index, deferred commit-time trigger, held by an invited or active user), flag copied from the role, API clients never super admin, reserved permissions only with Super Admin, Super Admin role not editable or clonable, role identity immutable, assignments revoke-only, super admin user cannot be suspended or deactivated, every access change bumps the access version | `services/core/migrations/versions/0003_access_control.py`, `ims_core/schema/access.py` | LLD 5.1, 7; LD-53, LD-15 |
+| Catalogue rebuilt from code after every migration (codes a release removes are revoked from roles, with a system audit entry); seeded roles inserted by natural key at provisioning and never overwritten | `pipelines/database/ims_db_pipeline/access_seed.py`, `migrate.py` | LLD 6.6 |
+| Pipeline step 8: every access rule; effective permissions (union over assignments, per site; super admin holds all) cached per process by (principal, access version) for up to 60 s and placed on the unit of work for record-site checks and list filters | `modules/access/public.py`, `evaluation.py`, `kernel/grants.py` | LLD 6.1, 7, 16 |
+| Pipeline step 7: token buckets per user (300/min), per API client (its own limit, 600 by default) and per customer (6,000/min); 429 with Retry-After | `modules/access/ratelimit.py` | LD-88, AD-84 |
+| `GET /ui/v1/me`: principal, user type, super-admin flag, role label, effective permissions per site, licence state, grace end, GxP mode, modules | `modules/access/api_ui.py` | LLD 7, 15 |
+| Users: list (cursor, status and text filters), read, create with role assignments in the same transaction, edit (If-Match), deactivate (sessions end, directory entry disabled) | `modules/access/service.py`, `modules/identity/service.py` | LLD 6.3, 12 |
+| Role assignments (create, revoke; never Super Admin), roles (list, read, create, edit), privilege matrix, `PUT roles/{id}/permissions` writing the difference, auditing each change and returning an effective-permission preview per affected principal | `modules/access` | LLD 7, 12 |
+| Super-admin transfer: locks the Super Admin role row, revokes and grants in one transaction; concurrent transfers leave exactly one | `service.py` | LLD 7, LD-53 |
+| No self-escalation; no lock-out of the super admin; GxP reason for role and permission changes | `service.py` | LLD 7, LD-82 |
+| API clients: list, create with role assignments, disable, rotate secret | `modules/access`, `modules/identity` | LD-13, LLD 16 |
+| `If-Match` / `ETag` for master-data edits (428, 412) | `kernel/versioning.py` | LLD 12 |
+| A route cannot declare a permission outside the catalogue (import-time error) | `kernel/routes.py` | LD-62 |
+| The Core application with all modules so far (`ims_core.main.build_app`), used by the server, the tests and the browser-test backend | `ims_core/main.py` | — |
+| Web app signed in to Core: BFF (`/bff/auth/*`, `/bff/[...path]` with CSRF and Origin checks, idempotency keys, refresh-once-and-replay), HttpOnly session cookies, token renewal in the proxy before render, session from `/ui/v1/me`, menus and screen guard from effective permissions, F22 and F36 live, F36 saves through Core | `apps/tenant-web/src/app/bff`, `src/bff`, `src/session`, `src/proxy.ts` | LLD 6.2, 15; LD-49 |
+| UI aligned with the LLD where frames disagree: sample personas carry the seeded permissions; Platform Console without price plans, billing, seven-year retention, support tiers, residency choice, SSO or "expired blocks everything" | `apps/*`; Docs/UI_Implementation.md section 10 | Product owner's authority rule |
+
+Not in unit 3, deliberately: support grants and support principals, recovery approvers and break-glass (unit 12); the provisioning run that creates the first super admin (unit 5; the service function exists and is used by the tests); sites, so `/me` returns no sites and assignment sites are not yet checked against `org.sites` (unit 4); notifications (unit 10); the screens the LLD needs but no wireframe draws (U-06).
+
 ## 3. Verification
 
-`uv run pytest`: 168 passed (about 2 minutes). `uv run ruff check .`: clean.
+`uv run pytest`: 266 passed (about 4 minutes). `uv run ruff check .`: clean. `npm run test:e2e`: 117 passed, 15 of them against the real Core. `npm run typecheck`, `npm run lint`: clean.
 
 | LLD section 17 row | Covered now | Tests |
 |---|---|---|
@@ -110,7 +133,18 @@ Unit 2 adds the LLD section 17 "Identity" row:
 
 Also covered: lockout after five password or MFA failures and unlock at exactly 15 minutes; recovery codes once each; refresh rotation and reuse revoking the session; idle and absolute expiry; sign-out; inactive users refused at pipeline step 6; tokens of one customer reach only that customer; activation code rules; identifiers unique across customers regardless of case; licence user limit; sign-in during a Platform Service outage from the cache and, for a process started mid-outage, from the signed bundle; "identifier in use" suspension; client-credentials grant, disabled clients, and audiences kept apart. The Login Directory has its own database tests (`tests/db/test_directory.py`): lifecycle, uniqueness, takeover of expired reservations, one identifier per principal, audit and change feed, only hashes stored, bundle contents, the pepper never readable by Core, and caller rules on every internal endpoint.
 
-Rows of section 17 that depend on later units (super admin, inventory rules, workflow, feeds, signatures, work scheduling, API compatibility, webhooks) are not covered yet.
+Unit 3 adds the access rows of section 17:
+
+| Requirement | Covered | Tests |
+|---|---|---|
+| Exactly one super admin (database) | Never two (index); never zero at commit; revoking the last assignment fails; API-client super admin fails; reserved-permission grants fail; the holder cannot be suspended or deactivated; a transfer in one transaction succeeds | `tests/db/test_access_schema.py` |
+| Exactly one super admin (concurrency) | Two concurrent transfers through the pipeline: one succeeds, one is refused, one holder remains | `tests/kernel/test_access_control.py` |
+| Permissions, static | Every route's permission is in the catalogue (import-time); TypeScript catalogue and seeded roles equal Python's | `tests/unit/test_access_rules.py`, `tests/static/test_typescript_contracts.py` |
+| Tenant isolation | Customer A's administrator cannot read customer B's user by ID (404) | `tests/kernel/test_access_control.py` |
+
+Also covered: catalogue and seeded roles equal the code; the application role cannot write the catalogue or the access version; a release that drops a code revokes it from roles with an audit entry and never re-seeds an edited role; role identity immutable; assignments revoke-only and never deleted; every access change moves the access version; `/me` per seeded type with site scope; declared permission and record-site checks (PERMISSION_DENIED, SITE_SCOPE_DENIED); user create, list, filter, page, If-Match edit, deactivation ending sessions; no self-escalation by site and by permission; super-admin protections; matrix submit writing the difference, auditing each change, returning the preview, and taking effect on the holder's next request with the same token; GxP reason; API clients holding permissions through roles, never Super Admin, secret rotation and disabling; rate limits per principal and per customer with Retry-After. In the browser against the real Core: sign-in through the BFF with real TOTP codes, F03 password step, shell and menus per seeded type, screen guard plus Core's refusal, F22 live users, F36 save reaching another person's menu, CSRF and Origin refusals, token renewal before render.
+
+Rows of section 17 that depend on later units (inventory rules, workflow, feeds, signatures, work scheduling, API compatibility, webhooks, support tokens) are not covered yet.
 
 ## 4. Implementation decisions
 
@@ -142,6 +176,18 @@ These are implementation-level choices consistent with the design. None changes 
 | I-21 | Core caches "unknown identifier" answers too, cleared by any directory change | Unknown and known identifiers then cost the same lookups |
 | I-22 | Credential-only modules can be mounted without the access stages | Lets the identity routes run before unit 3; the app still refuses tenant routes without all three stages |
 | I-23 | TOTP is implemented in the module (about 20 lines, checked against the RFC 6238 vectors) rather than a library; Argon2id comes from `argon2-cffi` | LLD section 2 asks for "a TOTP (RFC 6238) implementation"; no dependency is needed for HMAC-SHA1 |
+| I-24 | The permission catalogue and seeded roles live in `ims_contracts.permissions` | Pure data needed identically by Core, the database pipeline (which rebuilds the catalogue) and the web app's mirror |
+| I-25 | Super Admin holds every permission by definition and has no `role_permissions` rows; a trigger refuses any row for that role | Nothing to keep in step when the catalogue grows; the role cannot be edited by construction |
+| I-26 | Readings of LLD 5.1's seeded types: Type 2 "view all" is every `.view` and `.view_all` permission (including `audit.log.view`, `integration.sync.view`); Type 3 "view stock" adds `catalog.item.view` (stock is read against items), "receive" is `receiving.grn.create`, `.inspect`, `.post`, "validate returns" includes `returns.return.receive` (taking returns in comes first); Type 4 acknowledging and viewing its own records needs no permission (requester-only routes) | The LLD names activities, not codes. Customers can edit every seeded type (#10) |
+| I-27 | No lock-out of the super admin: other users cannot edit, deactivate or change the assignments of the super admin; the super admin may edit their own name and email; nobody can deactivate or demote the super admin except by transfer | LLD 7 "changing that user is refused until a transfer completes"; a person editing their own display name cannot lock anyone out |
+| I-28 | Rate-limit buckets are kept in each Core process | LLD 16: "No shared cache; any cache can be lost safely". With N instances the ceiling is N times the limit; database limits per customer hold regardless (U-14) |
+| I-29 | No self-escalation: adding a permission to a role needs it held at every site (a role can be assigned anywhere); granting a role needs every permission of the role at the assignment's site, or everywhere for an all-sites assignment. Removing is always allowed | LLD 7 "cannot grant permissions they do not hold", applied to site scope |
+| I-30 | The first super admin is given Super Admin and User Type 1 at every site | The super admin role is separate from user types (#10); after a transfer the former super admin stays an administrator. Matches the frames' "Super Admin · Type 1" |
+| I-31 | Assignment `granted_at` and `revoked_at` both come from the database clock | A check constraint compares them; mixing application and database clocks could fail it |
+| I-32 | Effective permissions are a kernel data type (`Grants`) placed on the unit of work by step 8; `Permission(code)` passes at route level when the code is held at one site, and handlers check the record's site | LLD 7: site checks use the loaded record, never a request parameter; lists filter with the allowed sites |
+| I-33 | The BFF exchanges a refresh token once per server process and shares the result for 30 s with requests still carrying it | Refresh rotation revokes the session when a spent token is presented (LD-26); a page and its parallel requests would otherwise trip it (U-13 for several BFF instances) |
+| I-34 | The web app has two session modes, `core` (default) and `fixtures`, chosen at run time | Screens whose backend does not exist yet stay viewable; nothing switches to sample personas unless asked |
+| I-35 | One table maps each screen to the permission of the endpoint it is built on; it drives both the menu and the screen guard | Menu and guard cannot disagree; custom roles get exactly the screens their permissions allow |
 
 ## 5. Deviations and points to confirm
 
@@ -159,8 +205,8 @@ Small gaps in the LLD that had to be filled to write code. Each is a narrow choi
 | D-08 | GxP customers on dedicated placement | Enforced by a database CHECK, per HLD section 8. Also an AI-filled assumption (Project Context 9.2) |
 | D-09 | Pooler-level `query_timeout` 20 s and `idle_transaction_timeout` 35 s | Added to the local pooler. See finding F-01 |
 
-| D-11 | Wireframes and the LLD disagree on what seeded user types may do (Type 2 item creation, Type 3 exports, who decides quality verdicts and more) | Sample personas follow the wireframes for item creation and the LLD elsewhere; the table is in Docs/UI_Implementation.md section 10 |
-| D-12 | The Platform Console frames show price plans, billing, an expired licence blocking all sites, 7-year audit retention and company SSO | Built as drawn; each statement is listed against the current design in Docs/UI_Implementation.md section 10 |
+| D-11 | Wireframes and the LLD disagree on what seeded user types may do (Type 2 item creation, Type 3 exports and audit trail, who decides quality verdicts and more) | **Resolved** by the product owner (17 November): the LLD decides. Personas, menus, screen guard and buttons follow the seeded permissions (Docs/UI_Implementation.md section 10) |
+| D-12 | The Platform Console frames show price plans, billing, an expired licence blocking all sites, 7-year audit retention and company SSO | **Resolved** by the product owner: content outside the HLD and LLD is not built. Removed from F51 to F53; the licence note states grace then read-only (Docs/UI_Implementation.md section 10) |
 | D-13 | **Conflict in the LLD.** LD-10 says the login pepper is known only to the Platform Service; LLD 6.3 (AD-79) says Core resolves uncached identifiers from the bundle's directory hashes during an outage, which Core cannot do without the hash key | A second keyed hash, `lookup_hash`, with a separate key that products hold (`shared/directory-lookup-key`). The pepper stays platform-only and the bundle carries only lookup hashes. Control-plane migration 0002 adds the column. Both statements now hold. Alternatives would be to share the pepper with Core (breaks LD-10) or to give up bundle-based sign-in for uncached users (breaks AD-79) |
 | D-14 | New users' one-time activation code: the LLD names it but not its form or lifetime | 12 characters from an unambiguous alphabet, shown once, stored as SHA-256; valid 72 hours (`activation_code_hours`); failures count toward the lockout. Columns `activation_code_hash` and `activation_expires_at` on `iam.users` |
 | D-15 | Suspended and terminated customers at sign-in | Refused with the same generic failure as a wrong password, after the same work. Answering LICENCE_SUSPENDED before authentication would tell anyone that the identifier exists. Refresh, which proves identity, does return the licence codes |
@@ -169,6 +215,13 @@ Small gaps in the LLD that had to be filled to write code. Each is a narrow choi
 | D-18 | `iam.users.department_id` and `home_site_id` have no foreign keys yet | The organisation tables arrive with unit 4, which adds the keys (`NOT VALID`, then validated) |
 | D-19 | New error code `PLATFORM_UNAVAILABLE` (503) | Creating a principal needs the Login Directory; no code in LLD section 12 fits an unreachable platform service. Added on both contract sides |
 | D-20 | An API client's login identifier is its client ID | AD-22 says API credentials resolve "through the same directory" without naming the identifier |
+| D-21 | Role-assignment sites and `/me` sites before the organisation module | `site_id` is stored without a foreign key and not yet checked against `org.sites`; unit 4 adds the key (`NOT VALID`, then validated) and the check. `/me` returns no sites and no home site until then; F22 shows a site count instead of codes |
+| D-22 | "Exactly one super admin … held by an active user" (LLD 7) | Read as invited or active: provisioning creates the super admin as an invited user who activates later. Transfers require an active target (the new holder must be able to sign in) |
+| D-23 | Error codes for the built-in rules (not named by the LLD) | PERMISSION_DENIED for super-admin protections, Super Admin role edits and self-escalation (SITE_SCOPE_DENIED when only the site is missing); VALIDATION_FAILED for unknown or reserved permission codes and an inactive transfer target; INVALID_STATE_TRANSITION for a duplicate assignment or repeated deactivation |
+| D-24 | Endpoints beyond the LLD 12 route table's resource names | `GET /ui/v1/users/{id}` and `GET /ui/v1/roles/{id}` (they return the ETag an edit needs), `POST /ui/v1/api-clients/{id}/disable` and `/rotate-secret` (LLD 16: "rotatable"). Users carry `last_active_at` (latest session refresh) for F22 |
+| D-25 | API client rate limit on creation | Accepted from 1 to 600 per minute: the LLD gives 600 per API client as the limit |
+| D-26 | GxP reason for access changes | Role edits, permission changes, assignments and transfers are GMP-relevant ("role and permission changes", LD-82): a reason is required in GxP mode. User profile edits and deactivation are not |
+| D-27 | `unread_notifications` in `/me` | `null` until notifications exist (unit 10); the shell draws no count rather than a sample one |
 
 ## 6. Findings
 
@@ -191,19 +244,21 @@ Small gaps in the LLD that had to be filled to write code. Each is a narrow choi
 
 Open items #8 to #37 in HLD section 11 are unchanged. Their defaults will be implemented as customer settings as each module is built.
 
-| U-06 | Wireframes are missing for screens the LLD requires: MFA enrolment and challenge, activation, GxP signature dialog, support grants and break-glass, emergency issue, requester (Type 4) screens, several Platform Console screens | These cannot be built to a design until drawn; the identity backend (unit 2) does not depend on them | Design |
-| U-07 | Points where frames disagree with the design or each other (Docs/UI_Implementation.md section 10) | Screens follow the frames as drawn until decided | Product owner |
+| U-06 | Wireframes are missing for screens the LLD requires: MFA enrolment and challenge, recovery-code entry, activation, user and role forms (add, invite, edit, assign), GxP signature dialog and reason field, support grants and break-glass, emergency issue, requester (Type 4) screens, several Platform Console screens | Not invented (product owner, 17 November). Consequence: in `core` mode nobody can finish signing in from the browser, because the authenticator step has no screen; the BFF endpoints exist and the browser tests sign in through them. F22's add, invite and edit buttons say their form is not designed | Design |
+| U-07 | Points where frames disagree with the design or each other (Docs/UI_Implementation.md section 10) | Permissions and Platform Console scope are decided (LLD wins; out-of-scope console content removed). Still open: approval policy shape and the F23/F61 chain (#8), taxonomy depth (#11), the console's platform-wide module flags (no `/platform/v1` resource) | Product owner |
 | U-08 | The common-password list is a seed of well-known long passwords | Production needs a full breached-password corpus; which one, and whether checked offline, is not decided (LLD section 16 names only "a common-password list") | Product owner / security |
 | U-09 | No email channel (#21): activation codes are returned to the creator, to hand over | Works as the LLD describes "until an email channel exists" | ZongoVita |
 | U-10 | Argon2id cost must be tuned to about 250 ms on the target hardware (section 16) | Defaults are RFC 9106's second recommendation (3 passes, 64 MiB, 4 lanes) until the hardware is known | ZongoVita cloud |
+| U-11 | Permissions added to the catalogue by a later release | They reach Super Admin automatically; they are not added to existing seeded or custom roles, because customers may have edited those (#10). Whether a new permission should join User Type 1 (or others) needs a product rule | Product owner |
+| U-12 | The BFF's own service credential (AD-64) for passing request IDs to Core | Not wired: Core assigns request IDs to BFF calls. The BFF's signing key needs the secrets manager (U-01) | ZongoVita |
+| U-13 | Refresh-token rotation behind several BFF instances | One process exchanges a refresh token once (I-33); two instances could each present it and revoke the session. Needs session affinity at the load balancer or a shared exchange | ZongoVita (deployment) |
+| U-14 | Rate limits are per Core instance (I-28) | A customer behind N instances can reach N times the limit. A shared limiter would need a shared store, which the LLD rules out (section 16) | Architecture, if exact limits matter |
 
-## 8. Next unit: access control
+## 8. Next unit: organisation and licence limits
 
-Scope from LLD 5.1, 7 and 12:
+Scope from LLD 5.1, 6.6 and 12:
 
-- Code-defined permission catalogue (rebuilt by every migration); roles, the seeded Super Admin and User Types 1 to 4, custom roles, site-scoped role assignments; `iam.access_version` for cache invalidation.
-- Built-in rules in the database: exactly one super admin (partial unique index and deferred commit-time trigger), reserved permissions, no self-escalation, API clients and support principals never super admin.
-- Pipeline step 8 (authorise) for every access rule, including site scope from the loaded record; step 7 (rate limits: 300 per user, 600 per API client, 6,000 per customer per minute).
-- `GET /ui/v1/me` with effective permissions per site and the licence state, which the web app's session layer then reads instead of sample personas.
-- User and API-client management endpoints, privilege matrix, super-admin transfer, using the identity service from unit 2.
-- Seeded defaults per user type need the decisions listed in Docs/UI_Implementation.md section 10 (D-11).
+- `org.sites` (staged, active, inactive; staged and active count against the licence site limit), `org.locations` (exactly one default location per site), `org.departments`; endpoints `sites`, `locations`, `departments` (`org.site.manage`, `org.location.manage`, `org.department.manage`) and the authenticated reference-data reads.
+- Foreign keys from `iam.users.department_id`, `home_site_id` and `iam.role_assignments.site_id` (added `NOT VALID`, then validated), and the site check on assignments (D-18, D-21).
+- `/ui/v1/me` returns the person's sites and home site; F21 Locations and the shell's location selector read them; F22 shows site codes.
+- Licence site limit under a transaction-level advisory lock, as the user limit is.

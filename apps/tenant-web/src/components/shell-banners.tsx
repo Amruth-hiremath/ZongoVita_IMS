@@ -2,11 +2,17 @@ import type { Me } from "@ims/api-client";
 
 import { formatDay } from "@/lib/dates";
 
-/** Thin strip above the top bar marking that the screens show sample data. */
-export function FixtureBanner() {
+/**
+ * Thin strip above the top bar saying where the screens' data comes from. Signed in to Core,
+ * the session, the menu, Users and Privileges are live; other screens still show the
+ * wireframes' sample data until their Core modules exist (Docs/UI_Implementation.md section 7).
+ */
+export function DataSourceBanner({ source }: { source: "core" | "fixtures" }) {
   return (
-    <div className="flex h-6 items-center justify-center bg-gray-50 text-[10.5px] tracking-wide text-gray-500">
-      Sample data from the wireframes · screens are not connected to IMS Core yet
+    <div className="flex h-6 items-center justify-center bg-gray-50 px-4 text-center text-[10.5px] tracking-wide text-gray-500">
+      {source === "core"
+        ? "Signed in to IMS Core · Users and Privileges are live; other screens show sample data from the wireframes"
+        : "Sample data from the wireframes · screens are not connected to IMS Core yet"}
     </div>
   );
 }

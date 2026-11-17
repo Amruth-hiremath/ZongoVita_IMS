@@ -68,6 +68,10 @@ def _invalid(field: str, message: str) -> DomainError:
     return DomainError(ErrorCode.VALIDATION_FAILED, errors=[FieldError(field=field, message=message)])
 
 
+def _actor(uow: UnitOfWork) -> UUID | None:
+    return uow.ctx.principal.id if uow.ctx.principal else None
+
+
 def _factor_context(user_id: UUID) -> str:
     """Binds an encrypted TOTP secret to its user: a copy on another row does not decrypt."""
     return f"iam.mfa_factors:{user_id}"
@@ -702,6 +706,142 @@ class IdentityService:
         )
         self._activate_after_commit(uow, PrincipalType.API_CLIENT, client_id, identifier)
         return CreatedApiClient(client_id=client_id, client_secret=secret)
+
+    # ================================================================== managing principals
+    async def update_profile(
+        self,
+        uow: UnitOfWork,
+        user_id: UUID,
+        *,
+        expected_version: int,
+        display_name: str,
+        email: str | None,
+    ) -> repository.UserProfile:
+        """Edit a user's name and email (master data: If-Match on the row version, LLD 12)."""
+        if not display_name.strip():
+            raise _invalid("display_name", "is required")
+        user = await repository.read_profile(uow.db, user_id, lock=True)
+        if user is None:
+            raise DomainError(ErrorCode.NOT_FOUND)
+        if user.version != expected_version:
+            raise DomainError(ErrorCode.VERSION_CONFLICT)
+        before = {"display_name": user.display_name, "email": user.email}
+        after = {"display_name": display_name.strip(), "email": email}
+        if before == after:
+            return user
+        await repository.update_profile(
+            uow.db, user_id, display_name=display_name.strip(), email=email, actor=_actor(uow)
+        )
+        await uow.audit.record(
+            action="iam.user.updated", entity_type="iam.user", entity_id=user_id, before=before, after=after
+        )
+        updated = await repository.read_profile(uow.db, user_id)
+        assert updated is not None
+        return updated
+
+    async def deactivate_user(
+        self, uow: UnitOfWork, user_id: UUID, *, reason: str | None
+    ) -> repository.UserProfile:
+        """Deactivate: sessions end now, the user stops counting against the licence, and the
+        Login Directory entry is disabled after commit (LLD 6.3). Users are never deleted."""
+        user = await repository.read_profile(uow.db, user_id, lock=True)
+        if user is None:
+            raise DomainError(ErrorCode.NOT_FOUND)
+        if user.status == "deactivated":
+            raise DomainError(ErrorCode.INVALID_STATE_TRANSITION, "the user is already deactivated")
+        now = self._now()
+        version = await repository.update_user(
+            uow.db,
+            user_id,
+            actor=_actor(uow),
+            status="deactivated",
+            activation_code_hash=None,
+            activation_expires_at=None,
+            mfa_challenge_jti=None,
+            mfa_challenge_expires_at=None,
+        )
+        ended = await repository.revoke_user_sessions(uow.db, user_id, at=now, reason="user deactivated")
+        await uow.audit.record(
+            action="iam.user.deactivated",
+            entity_type="iam.user",
+            entity_id=user_id,
+            before={"status": user.status},
+            after={"status": "deactivated", "sessions_ended": ended},
+            reason=reason,
+        )
+        await uow.events.publish(
+            event_type=events.USER_DEACTIVATED,
+            subject_type="iam.user",
+            subject_id=user_id,
+            subject_version=version,
+            data={"user_id": user_id, "status": "deactivated"},
+        )
+        self._disable_after_commit(uow, PrincipalType.USER, user_id, user.login_identifier)
+        updated = await repository.read_profile(uow.db, user_id)
+        assert updated is not None
+        return updated
+
+    async def disable_api_client(self, uow: UnitOfWork, client_id: UUID) -> repository.ApiClientProfile:
+        """Stops the client at once: pipeline step 6 checks its status on every request."""
+        client = await repository.read_api_client_profile(uow.db, client_id, lock=True)
+        if client is None:
+            raise DomainError(ErrorCode.NOT_FOUND)
+        if client.status == "disabled":
+            raise DomainError(ErrorCode.INVALID_STATE_TRANSITION, "the API client is already disabled")
+        version = await repository.update_api_client(uow.db, client_id, actor=_actor(uow), status="disabled")
+        await uow.audit.record(
+            action="iam.api_client.disabled",
+            entity_type="iam.api_client",
+            entity_id=client_id,
+            before={"status": client.status},
+            after={"status": "disabled"},
+        )
+        await uow.events.publish(
+            event_type=events.API_CLIENT_DISABLED,
+            subject_type="iam.api_client",
+            subject_id=client_id,
+            subject_version=version,
+            data={"client_id": client_id, "status": "disabled"},
+        )
+        self._disable_after_commit(uow, PrincipalType.API_CLIENT, client_id, str(client_id))
+        updated = await repository.read_api_client_profile(uow.db, client_id)
+        assert updated is not None
+        return updated
+
+    async def rotate_api_client_secret(self, uow: UnitOfWork, client_id: UUID) -> CreatedApiClient:
+        """A new 32-byte secret, shown once; the old one stops working at commit (LLD 16)."""
+        client = await repository.read_api_client_profile(uow.db, client_id, lock=True)
+        if client is None:
+            raise DomainError(ErrorCode.NOT_FOUND)
+        if client.status != "active":
+            raise DomainError(ErrorCode.INVALID_STATE_TRANSITION, "a disabled API client cannot be rotated")
+        secret = domain.new_client_secret()
+        await repository.update_api_client(
+            uow.db, client_id, actor=_actor(uow), secret_hash=domain.hash_client_secret(secret)
+        )
+        await uow.audit.record(
+            action="iam.api_client.secret_rotated",
+            entity_type="iam.api_client",
+            entity_id=client_id,
+            after={"secret": "rotated"},
+        )
+        return CreatedApiClient(client_id=client_id, client_secret=secret)
+
+    def _disable_after_commit(
+        self, uow: UnitOfWork, principal_type: PrincipalType, principal_id: UUID, identifier: str
+    ) -> None:
+        ctx = uow.ctx
+
+        async def _disable() -> None:
+            try:
+                await self.directory.client.disable(
+                    customer_id=ctx.customer_id, principal_type=principal_type, principal_id=principal_id
+                )
+                self.directory.forget(identifier)
+            except Exception:
+                log.exception("directory disable failed; reconciliation will retry")
+
+        uow.on_commit(_disable)
 
     async def _reserve(
         self, ctx: TenantContext, principal_type: PrincipalType, principal_id: UUID, identifier: str

@@ -27,12 +27,16 @@ The `.docx` files are not directly readable. Extract them to text (zip + `word/d
 - Every tenant route goes through `ImsRouter` with `@declare(access=..., read_only_ok=...)`.
 - Every sign-in path does exactly one Argon2id verification and fails with the same generic answer (LD-80); tests count verifications. Argon2id never runs inside a database transaction.
 - The login pepper never leaves the Platform Service; products resolve identifiers by the separate lookup hash (D-13).
+- Exactly one super admin, reserved permissions only with Super Admin, Super Admin role not editable, assignments revoke-only: enforced in the database (migration 0003), not only in services. Every role, permission or assignment change bumps `iam.access_version` by trigger (permission caches depend on it).
+- A route's `Permission(code)` must be in `ims_contracts.permissions.CATALOGUE`; the TypeScript mirror (`packages/api-client/src/permissions.ts`) must stay equal (static test). Site-scoped checks use the loaded record's site through `uow.grants`, never a request parameter.
+- The web app never gives page JavaScript a token: tokens live in HttpOnly cookies handled by `/bff` route handlers and the proxy; the BFF catch-all never forwards `auth/*`; writes need `X-IMS-CSRF` and a matching `Origin`.
 
 ## Commands
 
 - Install: `uv sync`
 - Test stack: see `README.md` (project `ims-test`, ports 54321 / 64321).
-- Tests: `uv run pytest` (about 2 minutes; `-m "not slow"` skips the two tests that wait on real timeouts).
+- Tests: `uv run pytest` (about 5 minutes; `-m "not slow"` skips the two tests that wait on real timeouts).
+- Browser tests: `npm run test:e2e` (starts `tools/e2e_backend.py`, which wipes the test stack: never run it alongside pytest).
 - Lint: `uv run ruff format .` then `uv run ruff check .`
 
 ## Conventions
@@ -48,7 +52,9 @@ The `.docx` files are not directly readable. Extract them to text (zip + `word/d
 
 - Read `Docs/UI_Implementation.md` before touching `apps/` or `packages/ui`. The wireframes (`Docs/ZongoVita-IMS.zip`, SVG with outlined text) are the visual authority: render them to PNG in the scratchpad to read them.
 - Next.js 16: read the bundled docs in `node_modules/next/dist/docs/` rather than relying on memory (`proxy.ts`, async `params`, CSP nonces).
-- No inline styles (strict CSP). Sample data only via `src/data` functions that name their endpoint; data-changing buttons are `ActionButton` until the endpoint exists. Regenerate the dependency tables with `node tools/ui-dependencies.mjs --write` (a test checks them).
+- Wireframes decide look and labels; the HLD/LLD decide behaviour and permissions (product owner, 17 November 2026). Do not invent screens the wireframes lack (MFA, activation, user forms): leave a design-gap notice.
+- Session source: `IMS_SESSION_SOURCE=core` (default, Core through the BFF) or `fixtures` (sample personas). Which screens a person may open is `src/session/access.ts` (menu and guard).
+- No inline styles (strict CSP). Reads only via `src/data` functions that name their endpoint: `fromCore` once Core has it, `fromFixture` until then; unconnected data-changing buttons are `ActionButton` (`waitingFor="design"` when only the form is missing). Regenerate the dependency tables with `node tools/ui-dependencies.mjs --write` (a test checks them).
 - Commands: `npm run typecheck`, `npm run lint`, `npm run test:e2e`.
 
 ## User preferences

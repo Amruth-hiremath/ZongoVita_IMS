@@ -363,6 +363,7 @@ class ApiClientRow:
     id: UUID
     secret_hash: bytes
     status: str
+    rate_limit_per_minute: int
 
 
 async def insert_api_client(
@@ -388,7 +389,11 @@ async def get_api_client(conn: AsyncConnection, client_id: UUID) -> ApiClientRow
     row = (
         (
             await conn.execute(
-                text("SELECT id, secret_hash, status FROM iam.api_clients WHERE id = :id"), {"id": client_id}
+                text(
+                    "SELECT id, secret_hash, status, rate_limit_per_minute "
+                    "FROM iam.api_clients WHERE id = :id"
+                ),
+                {"id": client_id},
             )
         )
         .mappings()
@@ -396,7 +401,12 @@ async def get_api_client(conn: AsyncConnection, client_id: UUID) -> ApiClientRow
     )
     if row is None:
         return None
-    return ApiClientRow(id=row["id"], secret_hash=bytes(row["secret_hash"]), status=row["status"])
+    return ApiClientRow(
+        id=row["id"],
+        secret_hash=bytes(row["secret_hash"]),
+        status=row["status"],
+        rate_limit_per_minute=row["rate_limit_per_minute"],
+    )
 
 
 _READ_USER = text("SELECT " + _USER_COLUMNS + " FROM iam.users WHERE id = :id")  # noqa: S608 - fixed columns
@@ -411,3 +421,148 @@ async def read_user(conn: AsyncConnection, user_id: UUID) -> UserRow | None:
     if data["activation_code_hash"] is not None:
         data["activation_code_hash"] = bytes(data["activation_code_hash"])
     return UserRow(**data)
+
+
+# ------------------------------------------------------------------------ user management
+@dataclass(frozen=True)
+class UserProfile:
+    """A user as administrators see it: no credential material."""
+
+    id: UUID
+    login_identifier: str
+    display_name: str
+    email: str | None
+    status: str
+    mfa_enrolled_at: datetime | None
+    locked_until: datetime | None
+    activation_expires_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+    version: int
+    #: Latest sign-in or token refresh; not read when the row is locked for a change.
+    last_active_at: datetime | None = None
+
+
+#: Sessions refresh every few minutes while someone works, so the latest refresh is their last
+#: activity (F22 "Last active").
+_LAST_ACTIVE = (
+    ", (SELECT max(s.last_refreshed_at) FROM iam.sessions s WHERE s.user_id = iam.users.id) AS last_active_at"
+)
+_PROFILE_COLUMNS = (
+    "id, login_identifier, display_name, email, status, mfa_enrolled_at, locked_until, "
+    "activation_expires_at, created_at, updated_at, version"
+)
+_READ_PROFILE = text("SELECT " + _PROFILE_COLUMNS + _LAST_ACTIVE + " FROM iam.users WHERE id = :id")  # noqa: S608
+_LOCK_PROFILE = text("SELECT " + _PROFILE_COLUMNS + " FROM iam.users WHERE id = :id FOR UPDATE")  # noqa: S608
+_READ_PROFILES = text(
+    "SELECT " + _PROFILE_COLUMNS + _LAST_ACTIVE + " FROM iam.users WHERE id = ANY(:ids)"  # noqa: S608
+)
+#: Keyset pagination in creation order (UUIDv7 ids sort by creation time).
+_LIST_PROFILES = text(
+    "SELECT "  # noqa: S608 - fixed columns
+    + _PROFILE_COLUMNS
+    + _LAST_ACTIVE
+    + " FROM iam.users"
+    " WHERE (CAST(:status AS text) IS NULL OR status = :status)"
+    " AND (CAST(:after AS uuid) IS NULL OR id > :after)"
+    " AND (CAST(:q AS text) IS NULL OR display_name ILIKE :q OR login_identifier ILIKE :q"
+    " OR email ILIKE :q)"
+    " ORDER BY id LIMIT :limit"
+)
+
+
+async def read_profile(conn: AsyncConnection, user_id: UUID, *, lock: bool = False) -> UserProfile | None:
+    row = (await conn.execute(_LOCK_PROFILE if lock else _READ_PROFILE, {"id": user_id})).mappings().first()
+    return UserProfile(**row) if row else None
+
+
+async def read_profiles(conn: AsyncConnection, user_ids: list[UUID]) -> dict[UUID, UserProfile]:
+    if not user_ids:
+        return {}
+    rows = (await conn.execute(_READ_PROFILES, {"ids": user_ids})).mappings().all()
+    return {row["id"]: UserProfile(**row) for row in rows}
+
+
+def _like(term: str | None) -> str | None:
+    if term is None or not term.strip():
+        return None
+    escaped = term.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{escaped}%"
+
+
+async def list_profiles(
+    conn: AsyncConnection, *, status: str | None, query: str | None, after: UUID | None, limit: int
+) -> list[UserProfile]:
+    rows = (
+        await conn.execute(
+            _LIST_PROFILES, {"status": status, "q": _like(query), "after": after, "limit": limit}
+        )
+    ).mappings()
+    return [UserProfile(**row) for row in rows]
+
+
+async def update_profile(
+    conn: AsyncConnection, user_id: UUID, *, display_name: str, email: str | None, actor: UUID | None
+) -> int:
+    return int(
+        (
+            await conn.execute(
+                text(
+                    "UPDATE iam.users SET display_name = :name, email = :email, updated_at = now(), "
+                    "updated_by = :actor, version = version + 1 WHERE id = :id RETURNING version"
+                ),
+                {"id": user_id, "name": display_name, "email": email, "actor": actor},
+            )
+        ).scalar_one()
+    )
+
+
+# ------------------------------------------------------------------- API client management
+@dataclass(frozen=True)
+class ApiClientProfile:
+    id: UUID
+    name: str
+    rate_limit_per_minute: int
+    status: str
+    created_at: datetime
+    updated_at: datetime
+    version: int
+
+
+_CLIENT_COLUMNS = "id, name, rate_limit_per_minute, status, created_at, updated_at, version"
+
+
+async def read_api_client_profile(
+    conn: AsyncConnection, client_id: UUID, *, lock: bool = False
+) -> ApiClientProfile | None:
+    statement = text(
+        "SELECT "  # noqa: S608 - fixed columns
+        + _CLIENT_COLUMNS
+        + " FROM iam.api_clients WHERE id = :id"
+        + (" FOR UPDATE" if lock else "")
+    )
+    row = (await conn.execute(statement, {"id": client_id})).mappings().first()
+    return ApiClientProfile(**row) if row else None
+
+
+async def list_api_client_profiles(conn: AsyncConnection) -> list[ApiClientProfile]:
+    rows = (
+        await conn.execute(text("SELECT " + _CLIENT_COLUMNS + " FROM iam.api_clients ORDER BY id"))  # noqa: S608
+    ).mappings()
+    return [ApiClientProfile(**row) for row in rows]
+
+
+async def update_api_client(
+    conn: AsyncConnection, client_id: UUID, *, actor: UUID | None, **fields: object
+) -> int:
+    allowed = {"status", "secret_hash", "name", "rate_limit_per_minute"}
+    unknown = set(fields) - allowed
+    if unknown:
+        raise ValueError(f"not an updatable API client column: {sorted(unknown)}")
+    assignments = ", ".join(f"{name} = :{name}" for name in fields)
+    statement = text(
+        "UPDATE iam.api_clients SET "  # noqa: S608 - allow-listed columns
+        + assignments
+        + ", updated_at = now(), updated_by = :actor, version = version + 1 WHERE id = :id RETURNING version"
+    )
+    return int((await conn.execute(statement, {**fields, "actor": actor, "id": client_id})).scalar_one())

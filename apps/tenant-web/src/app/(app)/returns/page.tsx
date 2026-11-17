@@ -51,7 +51,9 @@ export default async function ReturnsPage() {
           className="items-center"
           actions={
             <>
+              {hasPermission(me, "reporting.export.run") ? (
               <ActionButton endpoint="POST /ui/v1/exports">Returns log</ActionButton>
+            ) : null}
               <ButtonLink href="#validation-panel" variant="primary">
                 Validate {data.selected_ref}
               </ButtonLink>

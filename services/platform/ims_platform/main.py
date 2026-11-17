@@ -81,7 +81,7 @@ def run() -> None:  # pragma: no cover - process entry point
     use_selector_event_loop_on_windows()
     settings = PlatformSettings()
     configure_logging("ims-platform", settings.instance, settings.log_level)
-    uvicorn.run(create_app(settings), host="0.0.0.0", port=8081, log_config=None)  # noqa: S104
+    uvicorn.run(create_app(settings), host=settings.bind_host, port=settings.bind_port, log_config=None)
 
 
 if __name__ == "__main__":  # pragma: no cover

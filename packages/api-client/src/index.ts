@@ -1,4 +1,13 @@
 export { ERROR_CODES, isProblemDetails, type ErrorCode, type FieldError, type ProblemDetails } from "./problem";
 export { LICENCE_STATES, type LicenceState } from "./licence";
-export { PERMISSIONS, RESERVED_TO_SUPER_ADMIN, type PermissionCode } from "./permissions";
+export {
+  ALL_PERMISSION_CODES,
+  PERMISSIONS,
+  RESERVED_TO_SUPER_ADMIN,
+  USER_TYPE_1,
+  USER_TYPE_2,
+  USER_TYPE_3,
+  USER_TYPE_4,
+  type PermissionCode,
+} from "./permissions";
 export { hasPermission, type Me } from "./session";

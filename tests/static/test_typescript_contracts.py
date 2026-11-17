@@ -12,11 +12,10 @@ from pathlib import Path
 from ims_contracts.enums import LicenceModule
 from ims_contracts.errors import ErrorCode
 from ims_contracts.licence import LicenceState
+from ims_contracts.permissions import CATALOGUE, RESERVED_TO_SUPER_ADMIN, SEEDED_BY_CODE
 
 API_CLIENT = Path(__file__).resolve().parents[2] / "packages" / "api-client" / "src"
 TENANT_WEB = Path(__file__).resolve().parents[2] / "apps" / "tenant-web" / "src"
-
-_PERMISSION = re.compile(r"^[a-z_]+\.[a-z_]+\.[a-z_]+$")
 
 
 def _string_array(source: str, name: str) -> list[str]:
@@ -36,27 +35,32 @@ def test_licence_states_match() -> None:
     assert states == [state.value for state in LicenceState]
 
 
-def test_permission_catalogue_is_well_formed() -> None:
-    """LLD section 7: module.resource.action, with the three reserved permissions present.
-
-    Core's own catalogue arrives with the access module; this then becomes an equality check.
-    """
+def test_permission_catalogue_matches_core() -> None:
+    """LLD section 7: the web app's catalogue is Core's, code for code, scope for scope."""
     source = (API_CLIENT / "permissions.ts").read_text(encoding="utf-8")
     entries = re.findall(r'^\s*"([^"]+)": \{ siteScoped: (true|false) \},$', source, re.MULTILINE)
-    codes = [code for code, _ in entries]
-    assert len(codes) == len(set(codes)) >= 60
-    assert all(_PERMISSION.fullmatch(code) for code in codes)
-    reserved = set(re.findall(r'"(access\.[a-z_.]+)"', source.split("RESERVED_TO_SUPER_ADMIN")[1]))
-    assert reserved == {
-        "access.super_admin.transfer",
-        "access.support.grant",
-        "access.recovery_approver.manage",
-    }
-    assert reserved <= set(codes)
-    scoped = {code for code, flag in entries if flag == "true"}
-    # Spot checks against the LLD's asterisks.
-    assert {"inventory.stock.view", "issuance.issue.fulfil", "audit.log.view"} <= scoped
-    assert not {"catalog.item.view", "access.user.manage", "purchasing.vendor.view"} & scoped
+    assert [code for code, _ in entries] == [p.code for p in CATALOGUE], "same codes, same order"
+    assert {code for code, flag in entries if flag == "true"} == {p.code for p in CATALOGUE if p.site_scoped}
+    reserved = set(
+        re.findall(r'"(access\.[a-z_.]+)"', source.split("RESERVED_TO_SUPER_ADMIN")[1].split("];")[0])
+    )
+    assert reserved == RESERVED_TO_SUPER_ADMIN
+
+
+def _typed_array(source: str, name: str) -> list[str]:
+    match = re.search(rf"export const {name}: readonly PermissionCode\[\] = \[(.*?)\];", source, re.DOTALL)
+    assert match, f"{name} not found"
+    return re.findall(r'"([^"]+)"', match.group(1))
+
+
+def test_seeded_user_types_match_core() -> None:
+    """LLD 5.1 seeded roles: the sample personas use the same defaults as provisioning."""
+    source = (API_CLIENT / "permissions.ts").read_text(encoding="utf-8")
+    for number in (2, 3, 4):
+        listed = _typed_array(source, f"USER_TYPE_{number}")
+        assert len(listed) == len(set(listed))
+        assert set(listed) == SEEDED_BY_CODE[f"user_type_{number}"].permissions, number
+    assert "!RESERVED_TO_SUPER_ADMIN.includes(code)" in source.split("export const USER_TYPE_1")[1]
 
 
 def test_sample_personas_use_real_module_tags() -> None:

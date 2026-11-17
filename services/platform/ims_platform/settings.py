@@ -20,6 +20,8 @@ class PlatformSettings(BaseSettings):
     environment: Environment = "local"
     instance: str = Field(default_factory=socket.gethostname)
     log_level: str = "INFO"
+    bind_host: str = "0.0.0.0"  # noqa: S104 - container default; not routed from the internet
+    bind_port: int = 8081
 
     # Control-Plane database, reached through its cluster's pooler.
     db_pooler_host: str = "127.0.0.1"

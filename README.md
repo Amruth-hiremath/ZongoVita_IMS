@@ -85,7 +85,7 @@ docker compose -p ims-local -f deploy/local/docker-compose.yml up -d --build --w
 
 ## Web apps
 
-Both apps show the wireframe screens on sample data until the backend endpoints exist.
+The Tenant Web App signs in to IMS Core through its BFF (`IMS_SESSION_SOURCE=core`, the default; `IMS_CORE_URL` points at Core). Screens whose Core module does not exist yet show the wireframes' sample data. To view every screen with the sample personas instead, set `IMS_SESSION_SOURCE=fixtures`. The Platform Console shows sample data throughout.
 
 ```bash
 npm run dev:tenant
@@ -95,7 +95,7 @@ npm run dev:tenant
 npm run dev:platform
 ```
 
-The tenant app runs on http://localhost:3000 (sign in with one of the sample personas); the Platform Console on http://localhost:3100.
+The tenant app runs on http://localhost:3000; the Platform Console on http://localhost:3100.
 
 ```bash
 npm run typecheck
@@ -109,4 +109,4 @@ npm run lint
 npm run test:e2e
 ```
 
-The browser tests build both apps in production mode and serve them on ports 3200 and 3300.
+The browser tests build both apps in production mode and serve the tenant app twice, on sample data (3200) and signed in to IMS Core (3201), and the console on 3300. For the second, `tools/e2e_backend.py` serves Core on 8180 against the test stack: it wipes and re-provisions that stack, so do not run the browser tests and `uv run pytest` at the same time. It creates a demo customer whose people sign in with real passwords and authenticator codes; their test credentials go to the git-ignored `e2e/.auth/`.

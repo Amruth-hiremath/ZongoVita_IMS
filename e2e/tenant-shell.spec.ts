@@ -38,7 +38,7 @@ const menus = {
     "Returns",
     "Counts",
     "Transfers",
-    "Audit Trail",
+    // The frame also draws "Audit Trail"; the seeded User Type 3 has no audit.log.view (LLD 5.1).
   ],
 } as const;
 
@@ -82,6 +82,14 @@ for (const persona of ["type1", "type2", "type3"] as const) {
     }
   });
 }
+
+test("a screen outside the persona's permissions is not rendered (LLD 15)", async ({ page, baseURL }) => {
+  await signInAs(page, "type3", baseURL!);
+  for (const route of ["/audit", "/users", "/privileges", "/vendors"]) {
+    await page.goto(route);
+    await expect(page.getByRole("alert").filter({ hasText: /\S/ })).toHaveText("You do not have permission to open this screen");
+  }
+});
 
 test("the sign-in card offers the sample personas and explains what is not available", async ({ page }) => {
   await page.goto("/login");

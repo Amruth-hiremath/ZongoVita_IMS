@@ -8,22 +8,27 @@ export interface ActionButtonProps extends Omit<ButtonProps, "onClick"> {
    * (e.g. "POST /ui/v1/issue-requests/{id}/approve").
    */
   endpoint: string;
+  /**
+   * "endpoint" (default): Core does not provide the endpoint yet.
+   * "design": Core provides it, but the form or dialog the action opens has no approved
+   * wireframe yet (Implementation_Progress U-06), so nothing is invented in its place.
+   */
+  waitingFor?: "endpoint" | "design";
 }
 
 /**
- * A button for an action that changes data.
- *
- * No such action is wired yet: Core does not expose the endpoints. Rather than pretend, the
- * button says so and names the endpoint it is waiting for. Connecting an action means replacing
- * this component with a real submit at that call site.
+ * A button for an action that changes data but is not connected. Rather than pretend, the
+ * button says so and names what it is waiting for. Connecting an action means replacing this
+ * component with a real submit at that call site.
  */
-export function ActionButton({ endpoint, children, ...rest }: ActionButtonProps) {
+export function ActionButton({ endpoint, waitingFor = "endpoint", children, ...rest }: ActionButtonProps) {
   const notify = useNotice();
+  const message =
+    waitingFor === "design"
+      ? `IMS Core provides ${endpoint}, but the form for this action has no approved design yet.`
+      : `This action needs ${endpoint}, which IMS Core does not provide yet.`;
   return (
-    <Button
-      {...rest}
-      onClick={() => notify("Not connected yet", `This action needs ${endpoint}, which IMS Core does not provide yet.`)}
-    >
+    <Button {...rest} onClick={() => notify("Not connected yet", message)}>
       {children}
     </Button>
   );

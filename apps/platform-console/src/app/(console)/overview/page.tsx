@@ -27,7 +27,7 @@ export const metadata: Metadata = { title: "Platform Overview" };
 
 /** The four steps of the request pipeline card, as drawn. */
 const pipeline = [
-  { title: "Login", detail: "credentials + the enterprise's own sign-in" },
+  { title: "Login", detail: "password + authenticator code (MFA)" },
   { title: "Identify customer", detail: "the registry resolves which customer calls" },
   { title: "Check license", detail: "validity · sites · users · modules" },
   { title: "Use that DB only", detail: "every query hits one customer database" },
@@ -36,13 +36,13 @@ const pipeline = [
 /** F51 Platform Overview. */
 export default async function OverviewPage() {
   const page = await getPlatformOverview();
-  const { enterprises, seats, uptime, api_today: api } = page.kpis;
+  const { enterprises, users, uptime, api_today: api } = page.kpis;
 
   return (
     <>
       <PageHeader
         title="Platform Overview"
-        subtitle="ZongoVita cloud — every enterprise, license, seat, database and API call at a glance (FB-20 · FB-22)"
+        subtitle="ZongoVita cloud — every enterprise, license, user limit, database and API call at a glance (FB-20 · FB-22)"
         actions={
           <>
             <ActionButton endpoint="GET /platform/v1/customers (usage report export)" className="w-[116px] bg-none bg-white">
@@ -59,12 +59,12 @@ export default async function OverviewPage() {
         <StatCard
           label="Enterprises"
           value={enterprises.total}
-          hint={`${enterprises.active} active · ${enterprises.onboarding} onboarding · ${enterprises.trial} trial`}
+          hint={`${enterprises.active} active · ${enterprises.provisioning} provisioning · ${enterprises.suspended} suspended`}
         />
         <StatCard
-          label="Seats in use"
-          value={`${seats.used} / ${seats.licensed}`}
-          badge={<Pill tone="blue">{seats.utilisation_percent}% utilisation</Pill>}
+          label="Licensed users in use"
+          value={`${users.used} / ${users.licensed}`}
+          badge={<Pill tone="blue">{users.utilisation_percent}% utilisation</Pill>}
         />
         <StatCard
           label="Platform uptime"
@@ -82,9 +82,8 @@ export default async function OverviewPage() {
               <TR>
                 <TH>Ent</TH>
                 <TH>Company</TH>
-                <TH>Plan</TH>
                 <TH>Database</TH>
-                <TH align="center">Seats</TH>
+                <TH align="center">Users</TH>
                 <TH align="right">API · 7 d</TH>
                 <TH>Last activity</TH>
               </TR>
@@ -94,10 +93,9 @@ export default async function OverviewPage() {
                 <TR key={row.enterprise_code}>
                   <TD className="whitespace-nowrap text-[12.5px] text-gray-700">{row.enterprise_code}</TD>
                   <TD className="whitespace-nowrap text-gray-700">{row.company}</TD>
-                  <TD muted>{row.plan ?? "—"}</TD>
                   <TD className="whitespace-nowrap text-[12.5px] text-gray-700">{row.database}</TD>
                   <TD muted align="center" numeric className="whitespace-nowrap">
-                    {row.seats_used} / {row.seats_licensed}
+                    {row.users_used} / {row.users_licensed}
                   </TD>
                   <TD muted align="right" numeric className="whitespace-nowrap">
                     {row.api_calls_7d ?? "—"}

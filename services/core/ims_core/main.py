@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 from collections.abc import AsyncIterator, Sequence
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from fastapi import APIRouter, FastAPI, Response
 
@@ -16,6 +16,10 @@ from ims_core.kernel.routes import ImsRoute, NoPermission
 from ims_core.kernel.runtime import CoreRuntime, build_runtime
 from ims_core.kernel.settings import CoreSettings
 from ims_core.kernel.stages import PipelineStages
+
+if TYPE_CHECKING:
+    from ims_core.modules.access.public import RateLimits
+    from ims_core.modules.identity.credentials import PasswordHasher
 
 
 class CoreModule(Protocol):
@@ -116,17 +120,39 @@ def create_app(
     return app
 
 
+def build_app(
+    settings: CoreSettings | None = None,
+    *,
+    runtime: CoreRuntime | None = None,
+    run_change_feed: bool = True,
+    hasher: PasswordHasher | None = None,
+    limits: RateLimits | None = None,
+    routers: Sequence[APIRouter] = (),
+) -> FastAPI:
+    """The Core application with every module built so far, in dependency order: identity
+    (credentials, principal stage), then access control (rate limits, authorisation, /me)."""
+    from ims_core.modules.access import AccessModule  # noqa: PLC0415
+    from ims_core.modules.identity import IdentityModule  # noqa: PLC0415
+    from ims_core.modules.identity.public import PrincipalStage  # noqa: PLC0415
+
+    access = AccessModule(limits=limits)
+    return create_app(
+        settings,
+        runtime=runtime,
+        stages=access.stages(PrincipalStage()),
+        routers=routers,
+        modules=[IdentityModule(hasher), access],
+        run_change_feed=run_change_feed,
+    )
+
+
 def run() -> None:  # pragma: no cover - process entry point
     import uvicorn  # noqa: PLC0415
 
     use_selector_event_loop_on_windows()
     settings = CoreSettings()
     configure_logging(settings.service_name, settings.instance, settings.log_level)
-    from ims_core.modules.identity import IdentityModule  # noqa: PLC0415
-
-    # Credential routes need no access stages; tenant routes arrive with the access module (unit 3).
-    app = create_app(settings, modules=[IdentityModule()])
-    uvicorn.run(app, host="0.0.0.0", port=8080, log_config=None)  # noqa: S104
+    uvicorn.run(build_app(settings), host=settings.bind_host, port=settings.bind_port, log_config=None)
 
 
 if __name__ == "__main__":  # pragma: no cover

@@ -33,7 +33,9 @@ export default async function QuarantinePage() {
         className="items-center"
         actions={
           <>
-            <ActionButton endpoint="POST /ui/v1/exports">Export hold report</ActionButton>
+            {hasPermission(me, "reporting.export.run") ? (
+              <ActionButton endpoint="POST /ui/v1/exports">Export hold report</ActionButton>
+            ) : null}
             <ButtonLink href="#validation-checklist" variant="primary">
               Open {data.selected_ref}
             </ButtonLink>

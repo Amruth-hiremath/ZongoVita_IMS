@@ -34,6 +34,8 @@ class AccessClass(Enum):
     APPEND_ONLY = frozenset({"SELECT", "INSERT"})
     #: Business rights plus DELETE: only for tables on the LLD's exception list.
     DELETABLE = frozenset({"SELECT", "INSERT", "UPDATE", "DELETE"})
+    #: SELECT only: maintained by the database pipeline or by triggers, read by the application.
+    READ_ONLY = frozenset({"SELECT"})
 
 
 #: schema.table -> access class. Every table in the customer schemas must appear here.
@@ -52,6 +54,15 @@ TABLE_ACCESS: dict[str, AccessClass] = {
     "iam.api_clients": AccessClass.BUSINESS,
     # Exception list: sessions past their absolute expiry are deleted by a cleanup job.
     "iam.sessions": AccessClass.DELETABLE,
+    # Access control (unit 3). The catalogue is rebuilt from code by the pipeline; the access
+    # version is incremented by trigger only.
+    "iam.permission_catalog": AccessClass.READ_ONLY,
+    "iam.access_version": AccessClass.READ_ONLY,
+    "iam.roles": AccessClass.BUSINESS,
+    # Exception list: removing a permission from a role deletes its row.
+    "iam.role_permissions": AccessClass.DELETABLE,
+    # Revoked, never deleted.
+    "iam.role_assignments": AccessClass.BUSINESS,
 }
 
 #: Tables where UPDATE is granted on named columns only.

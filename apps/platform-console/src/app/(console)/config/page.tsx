@@ -6,13 +6,6 @@ import {
   KeyValue,
   PageHeader,
   Pill,
-  SectionLabel,
-  TBody,
-  TD,
-  TH,
-  THead,
-  TR,
-  Table,
   cn,
 } from "@ims/ui";
 import { ArrowRight, Check, X } from "lucide-react";
@@ -32,7 +25,11 @@ const provisioning = [
   { title: "Wizard (F35)", detail: "enterprise → super admin → sites → users" },
 ];
 
-/** F53 Platform Config. */
+/**
+ * F53 Platform Config. The frame's plan entitlement rails (seats, 7-year audit retention, support
+ * tiers, data-residency choice) are not part of the HLD or LLD and are left out
+ * (Docs/UI_Implementation.md section 10).
+ */
 export default async function ConfigPage() {
   const page = await getPlatformConfig();
 
@@ -105,38 +102,6 @@ export default async function ConfigPage() {
         </div>
 
         <div className="flex min-w-0 flex-col gap-6">
-          <div>
-            <SectionLabel className="mb-2">Plan entitlement rails</SectionLabel>
-            <Table className="[&_td]:px-2.5 [&_th]:px-2.5">
-              <THead>
-                <TR>
-                  <TH>Rail</TH>
-                  <TH>Starter</TH>
-                  <TH>Growth</TH>
-                  <TH>Enterprise</TH>
-                </TR>
-              </THead>
-              <TBody zebra>
-                {page.plan_rails.map((row) => (
-                  <TR key={row.rail}>
-                    <TD strong className="h-[38px] whitespace-nowrap">
-                      {row.rail}
-                    </TD>
-                    <TD muted className="h-[38px] whitespace-nowrap">
-                      {row.starter}
-                    </TD>
-                    <TD muted className="h-[38px] whitespace-nowrap">
-                      {row.growth}
-                    </TD>
-                    <TD muted className="h-[38px] whitespace-nowrap">
-                      {row.enterprise}
-                    </TD>
-                  </TR>
-                ))}
-              </TBody>
-            </Table>
-          </div>
-
           <Card>
             <CardHeader title="Tenant override boundary" />
             <CardBody className="pb-7 pt-3">

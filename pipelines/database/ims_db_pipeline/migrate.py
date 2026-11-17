@@ -28,6 +28,7 @@ import ims_core
 import ims_platform
 from ims_common.pg import SQLSTATE_LOCK_NOT_AVAILABLE, sqlstate_of
 from ims_common.secrets import SecretsStore
+from ims_db_pipeline.access_seed import AccessSeedReport, seed_access
 from ims_db_pipeline.cluster import ClusterAdmin
 from ims_db_pipeline.partitions import PartitionReport, ensure_partitions
 from ims_db_pipeline.provision import (
@@ -46,6 +47,7 @@ class MigrationOutcome:
     from_version: str | None
     to_version: str
     partitions: PartitionReport | None = None
+    access: AccessSeedReport | None = None
 
     @property
     def changed(self) -> bool:
@@ -70,19 +72,23 @@ def schema_head(script_location: Path) -> str:
     return head
 
 
+#: Steps run after every upgrade, in the migration's transaction; they return report fields.
+AfterUpgrade = Callable[[Connection], dict[str, Any]]
+
+
 def _upgrade(
     connection: Connection,
     script_location: Path,
     attributes: dict[str, Any],
-    after_upgrade: Callable[[Connection], PartitionReport] | None,
-) -> tuple[str | None, str, PartitionReport | None]:
+    after_upgrade: AfterUpgrade | None,
+) -> tuple[str | None, str, dict[str, Any]]:
     config = _alembic_config(script_location, connection, attributes)
     head = schema_head(script_location)
     current = MigrationContext.configure(connection).get_current_revision()
     if current != head:
         command.upgrade(config, head)
-    report = after_upgrade(connection) if after_upgrade else None
-    return current, head, report
+    reports = after_upgrade(connection) if after_upgrade else {}
+    return current, head, reports
 
 
 async def _run(
@@ -93,7 +99,7 @@ async def _run(
     password: str,
     script_location: Path,
     attributes: dict[str, Any],
-    after_upgrade: Callable[[Connection], PartitionReport] | None,
+    after_upgrade: AfterUpgrade | None,
 ) -> MigrationOutcome:
     engine = cluster.engine_as(database, user, password)
     try:
@@ -101,10 +107,10 @@ async def _run(
             try:
                 async with engine.begin() as conn:
                     await conn.execute(text(f"SET LOCAL lock_timeout = '{MIGRATION_LOCK_TIMEOUT}'"))
-                    current, head, report = await conn.run_sync(
+                    current, head, reports = await conn.run_sync(
                         _upgrade, script_location, attributes, after_upgrade
                     )
-                return MigrationOutcome(database, current, head, report)
+                return MigrationOutcome(database, current, head, **reports)
             except DBAPIError as exc:
                 # A busy table: back off and retry rather than queue behind application traffic.
                 if sqlstate_of(exc) != SQLSTATE_LOCK_NOT_AVAILABLE or attempt == MIGRATION_ATTEMPTS:
@@ -122,10 +128,17 @@ async def migrate_customer_database(
     *,
     today: datetime | None = None,
 ) -> MigrationOutcome:
-    """Bring one customer database to the schema head and make sure its partitions exist."""
+    """Bring one customer database to the schema head, make sure its partitions exist, rebuild
+    the permission catalogue from code and insert any missing seeded role (LLD 6.6, 6.7)."""
     target = CustomerDatabase.for_customer(customer_code)
     credential = await secrets.get(target.migration_secret_ref)
     day = (today or datetime.now(UTC)).date()
+
+    def after_upgrade(connection: Connection) -> dict[str, Any]:
+        # Partitions first: the seed may write audit entries for permissions a release removed.
+        partitions = ensure_partitions(connection, day)
+        return {"partitions": partitions, "access": seed_access(connection)}
+
     return await _run(
         cluster,
         database=target.database_name,
@@ -133,7 +146,7 @@ async def migrate_customer_database(
         password=credential["password"],
         script_location=ims_core.migrations_path(),
         attributes={"app_role": target.app_role, "breakglass_role": target.breakglass_role},
-        after_upgrade=lambda connection: ensure_partitions(connection, day),
+        after_upgrade=after_upgrade,
     )
 
 
