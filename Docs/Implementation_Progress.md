@@ -2,7 +2,7 @@
 
 Living record of what is built, how it was verified, what was decided at implementation level, and what is unresolved. The HLD and LLD remain the authority for design; this file never overrides them.
 
-Last updated: 17 November 2026.
+Last updated: 19 November 2026.
 
 ## 1. Status
 
@@ -10,9 +10,9 @@ Last updated: 17 November 2026.
 |---|---|---|
 | 1 | Tenancy, licensing and transaction foundation | Done, verified (168 tests; 175 with the UI contract checks) |
 | 2 | Identity and session: Login Directory, users, login, MFA, refresh, lockout | Done, verified (61 new tests; 236 in all) |
-| 3 | Access control: permission catalogue, roles, user types, super-admin rules, authorisation stage, rate limits, `/me` | Done, verified (30 new Python tests, 266 in all; 15 browser tests against the real Core) |
-| 4 | Organisation (sites, locations, departments) and licence limits | Next |
-| 5 | Platform administration API, provisioning runs, platform users | Pending |
+| 3 | Access control: permission catalogue, roles, user types, super-admin rules, authorisation stage, rate limits, `/me` | Done, verified (30 new Python tests, 266 in all; 14 browser tests against the real Core: 4 sign-ins and 10 tests, first reported as 15 in error) |
+| 4 | Organisation (sites, locations, departments) and licence limits | Done, verified (13 new Python tests, 279 in all; 119 browser tests, 16 against the real Core) |
+| 5 | Platform administration API, provisioning runs, platform users | Next |
 | 6 | Workers: job queue, outbox dispatch, work-pending index, service levels | Pending |
 | 7 | Workflow and approval engine | Pending |
 | 8 | Catalogue; vendors and purchase records | Pending |
@@ -20,12 +20,12 @@ Last updated: 17 November 2026.
 | 10 | Replenishment, alerts, reporting and export | Pending |
 | 11 | Integration: public API, events feed, webhooks, connectors, sandbox | Pending |
 | 12 | GxP signatures, support grants, break-glass | Pending (hooks for reason-for-change already in the kernel) |
-| 13 | Next.js apps (Tenant Web App, Platform Console) | All 43 wireframe screens built. The Tenant Web App signs in to Core through its BFF; session, menus, screen guard, F22 and F36 are live; other screens show sample data until their units land (Docs/UI_Implementation.md) |
+| 13 | Next.js apps (Tenant Web App, Platform Console) | All 43 wireframe screens built. The Tenant Web App signs in to Core through its BFF; session, menus, screen guard, location selector, F21, F22 and F36 are live; other screens show sample data until their units land (Docs/UI_Implementation.md) |
 | 14 | Staged migration rollout, load test, deployment artefacts | Pending |
 
 The order follows dependencies: every module needs the kernel (unit 1); authorisation needs identities (2 before 3); site-scoped permissions need sites (4); stock modules need workflow gates and the catalogue (7, 8 before 9).
 
-Git: unit 1 and the UI are committed on local `main`. Unit 2 is committed on the local branch `unit-2/identity-session`, created from `main`. Unit 3 is committed on `unit-3/access-control`, created from `unit-2/identity-session` on the product owner's instruction, so it contains units 1 and 2. Nothing is pushed.
+Git: unit 1 and the UI are committed on local `main`; unit 2 on `unit-2/identity-session` (from `main`); unit 3 on `unit-3/access-control` (from unit 2); unit 4 on `unit-4/organisation-licence-limits` (from unit 3), so each unit branch contains the units before it. No commit was pushed from this work; the earlier commits are unchanged.
 
 ## 2. What unit 1 delivered
 
@@ -106,9 +106,24 @@ Not in unit 2, deliberately: user and API-client management endpoints (they need
 
 Not in unit 3, deliberately: support grants and support principals, recovery approvers and break-glass (unit 12); the provisioning run that creates the first super admin (unit 5; the service function exists and is used by the tests); sites, so `/me` returns no sites and assignment sites are not yet checked against `org.sites` (unit 4); notifications (unit 10); the screens the LLD needs but no wireframe draws (U-06).
 
+## 2d. What unit 4 delivered
+
+| Area | Where | Design reference |
+|---|---|---|
+| Customer schema: `org.sites` (code, name, IANA timezone, status staged / active / inactive), `org.locations` (site, code, name, default flag, status), `org.departments` (code, name, status), with the rules in the database: exactly one default location per site (partial unique index, deferred commit-time trigger that also covers a new site), the default location active, site transitions only along the defined ones, timezones PostgreSQL knows, codes unique per customer ignoring case and fixed once created, a location never moves site, nothing deleted | `services/core/migrations/versions/0004_organisation.py`, `ims_core/schema/access.py` | LLD 5.1, 3 |
+| Foreign keys from `iam.users.department_id`, `iam.users.home_site_id` and `iam.role_assignments.site_id`, added `NOT VALID` and validated in the same migration | same | LLD 6.7; D-18, D-21 resolved |
+| Licence site limit: staged and active sites count; creating a site or re-activating an inactive one is refused at the limit (409 LIMIT_EXCEEDED) under a transaction-level advisory lock, so concurrent creations cannot overshoot | `modules/organisation/service.py` | AD-27, #30 ("creation refused at the limit"), LLD 5.1 |
+| Endpoints: `GET sites, locations, departments` (and by id, with ETag) for every authenticated principal; sites (create with their default location, edit, activate, deactivate) with `org.site.manage`; locations (create, edit, make default, activate, deactivate) with `org.location.manage`; departments (create, edit, activate, deactivate) with `org.department.manage`; edits need If-Match; lists use cursor pagination | `modules/organisation/api_ui.py`, `kernel/paging.py` | LLD 12 |
+| Public API reference data: `GET /api/v1/sites`, `GET /api/v1/locations` (licence module ims.integration) | `modules/organisation/api_public.py` | LLD 12 public table |
+| Identity and access integration: users carry a department (active when set) and a home site (staged or active when set) on create and edit; role assignments must name an existing site; `/ui/v1/me` returns the active sites the person works at and their home site | `modules/access/service.py`, `modules/identity` | LLD 5.1, 7, 15 |
+| Web app: the shell's location selector from `/me`; F21 Locations live (sites, status, users assigned at each site by user type); F22 shows site codes; add and edit buttons say their forms are not designed | `apps/tenant-web/src/data/{sites,locations,users}.ts`, `src/app/(app)/locations`, `(app)/layout.tsx` | LLD 15; wireframes F21, F22 |
+| Browser-test backend: the demo customer gets the four F21 sites (one active, three staged), two departments, and its people home sites, departments and site-scoped roles | `tools/e2e_backend.py` | — |
+
+Not in unit 4, deliberately: anything that needs stock (staged sites hold no stock; whether a site or location with stock may be deactivated, U-15) arrives with Inventory Core (unit 9); site type and city, drawn in F21, are not in the LLD's site record (U-07); screens for creating and editing sites, locations and departments are not drawn (U-06); the Platform Console's sites-used figure needs Core to report usage to the Platform Service (unit 5, AD-13).
+
 ## 3. Verification
 
-`uv run pytest`: 266 passed (about 4 minutes). `uv run ruff check .`: clean. `npm run test:e2e`: 117 passed, 15 of them against the real Core. `npm run typecheck`, `npm run lint`: clean.
+`uv run pytest`: 279 passed (about 5 minutes). `uv run ruff check .`: clean. `npm run test:e2e`: 119 passed, 16 of them against the real Core (run after the Python suite, never alongside: both use the test database stack). `npm run typecheck`, `npm run lint`: clean.
 
 | LLD section 17 row | Covered now | Tests |
 |---|---|---|
@@ -143,6 +158,16 @@ Unit 3 adds the access rows of section 17:
 | Tenant isolation | Customer A's administrator cannot read customer B's user by ID (404) | `tests/kernel/test_access_control.py` |
 
 Also covered: catalogue and seeded roles equal the code; the application role cannot write the catalogue or the access version; a release that drops a code revokes it from roles with an audit entry and never re-seeds an edited role; role identity immutable; assignments revoke-only and never deleted; every access change moves the access version; `/me` per seeded type with site scope; declared permission and record-site checks (PERMISSION_DENIED, SITE_SCOPE_DENIED); user create, list, filter, page, If-Match edit, deactivation ending sessions; no self-escalation by site and by permission; super-admin protections; matrix submit writing the difference, auditing each change, returning the preview, and taking effect on the holder's next request with the same token; GxP reason; API clients holding permissions through roles, never Super Admin, secret rotation and disabling; rate limits per principal and per customer with Retry-After. In the browser against the real Core: sign-in through the BFF with real TOTP codes, F03 password step, shell and menus per seeded type, screen guard plus Core's refusal, F22 live users, F36 save reaching another person's menu, CSRF and Origin refusals, token renewal before render.
+
+Unit 4 adds:
+
+| Requirement | Covered | Tests |
+|---|---|---|
+| Licence limits (AD-27, #30) | Site limit at creation and re-activation, inactive sites not counted, staged to active not counted twice, three concurrent creations for two places give two sites and one LIMIT_EXCEEDED | `tests/kernel/test_organisation.py` |
+| Licence state | Read-only state serves organisation reads and refuses organisation writes | `tests/kernel/test_organisation.py` |
+| Database guards | Exactly one default location (never none at commit, never two), default active, defined site transitions only, IANA timezones, codes unique ignoring case and fixed, location never moves site, no deletes; users and assignments refer to real departments and sites | `tests/db/test_organisation_schema.py`, `tests/db/test_customer_database.py` (grants) |
+
+Also covered: sites created with their default location; If-Match edits (428, 412); duplicate codes and unknown timezones refused with field errors; location default moved by one command; the default cannot be deactivated; departments; reference data for every principal and changes only with the organisation permissions; assignments at unknown sites and inactive departments refused; `/me` sites per scope (one site, every active site, a deactivated site leaving); public API reference data with a client-credentials token. In the browser against the real Core: F21 sites, status and assigned users, F22 site codes, the location selector per person.
 
 Rows of section 17 that depend on later units (inventory rules, workflow, feeds, signatures, work scheduling, API compatibility, webhooks, support tokens) are not covered yet.
 
@@ -188,6 +213,13 @@ These are implementation-level choices consistent with the design. None changes 
 | I-33 | The BFF exchanges a refresh token once per server process and shares the result for 30 s with requests still carrying it | Refresh rotation revokes the session when a spent token is presented (LD-26); a page and its parallel requests would otherwise trip it (U-13 for several BFF instances) |
 | I-34 | The web app has two session modes, `core` (default) and `fixtures`, chosen at run time | Screens whose backend does not exist yet stay viewable; nothing switches to sample personas unless asked |
 | I-35 | One table maps each screen to the permission of the endpoint it is built on; it drives both the menu and the screen guard | Menu and guard cannot disagree; custom roles get exactly the screens their permissions allow |
+| I-36 | Organisation is its own module; access reads sites and departments through `organisation.public`, and the application mounts identity, organisation, then access | Module boundaries (LD-01); access depends on organisation, not the reverse |
+| I-37 | A site is created with its default location in one request (`default_location` in `POST /ui/v1/sites`) | The database requires exactly one default location per site at commit (LLD 5.1); a site without one cannot exist even briefly |
+| I-38 | The site limit is checked under the advisory lock `org.licensed_sites` at creation and at inactive to active; staged to active is not checked again | Staged sites already count (LLD 5.1); AD-27 checks "at creation or activation" |
+| I-39 | Site timezones are validated by PostgreSQL (`pg_timezone_names`), in the service and in a trigger | Daily jobs and site-time display convert in PostgreSQL; Python's time-zone data differs (F-05) |
+| I-40 | Site, location and department codes are set at creation and never change (trigger); names and the site timezone are edited with If-Match | Integrations address locations by code (LLD 12 public API) |
+| I-41 | List endpoints share one cursor-pagination helper (`kernel/paging.py`): ordered by id, `next_cursor` is the last id | LLD 12: limit 50, maximum 200, next_cursor |
+| I-42 | `/ui/v1/me` lists active sites only: every active site for the super admin and for any all-sites assignment, otherwise the active sites of the person's assignments | Staged sites hold no stock and inactive ones are closed; the location selector offers where work happens |
 
 ## 5. Deviations and points to confirm
 
@@ -212,16 +244,22 @@ Small gaps in the LLD that had to be filled to write code. Each is a narrow choi
 | D-15 | Suspended and terminated customers at sign-in | Refused with the same generic failure as a wrong password, after the same work. Answering LICENCE_SUSPENDED before authentication would tell anyone that the identifier exists. Refresh, which proves identity, does return the licence codes |
 | D-16 | MFA enrolment sequence | `POST /ui/v1/auth/mfa/enrol` creates the secret; the first code sent to `POST /ui/v1/auth/mfa` confirms it, issues the ten recovery codes and opens the session. Both routes are in the LLD list; the split of work between them is not specified |
 | D-17 | `iam.sessions.user_id` has no foreign key | Support sessions (LD-83) are for support principals, who are not rows of `iam.users` |
-| D-18 | `iam.users.department_id` and `home_site_id` have no foreign keys yet | The organisation tables arrive with unit 4, which adds the keys (`NOT VALID`, then validated) |
+| D-18 | `iam.users.department_id` and `home_site_id` have no foreign keys yet | **Resolved in unit 4**: migration 0004 adds the keys (`NOT VALID`, then validated) |
 | D-19 | New error code `PLATFORM_UNAVAILABLE` (503) | Creating a principal needs the Login Directory; no code in LLD section 12 fits an unreachable platform service. Added on both contract sides |
 | D-20 | An API client's login identifier is its client ID | AD-22 says API credentials resolve "through the same directory" without naming the identifier |
-| D-21 | Role-assignment sites and `/me` sites before the organisation module | `site_id` is stored without a foreign key and not yet checked against `org.sites`; unit 4 adds the key (`NOT VALID`, then validated) and the check. `/me` returns no sites and no home site until then; F22 shows a site count instead of codes |
+| D-21 | Role-assignment sites and `/me` sites before the organisation module | **Resolved in unit 4**: assignments refer to real sites (foreign key and a field error), `/me` lists the person's active sites and home site, F22 shows site codes |
 | D-22 | "Exactly one super admin … held by an active user" (LLD 7) | Read as invited or active: provisioning creates the super admin as an invited user who activates later. Transfers require an active target (the new holder must be able to sign in) |
 | D-23 | Error codes for the built-in rules (not named by the LLD) | PERMISSION_DENIED for super-admin protections, Super Admin role edits and self-escalation (SITE_SCOPE_DENIED when only the site is missing); VALIDATION_FAILED for unknown or reserved permission codes and an inactive transfer target; INVALID_STATE_TRANSITION for a duplicate assignment or repeated deactivation |
 | D-24 | Endpoints beyond the LLD 12 route table's resource names | `GET /ui/v1/users/{id}` and `GET /ui/v1/roles/{id}` (they return the ETag an edit needs), `POST /ui/v1/api-clients/{id}/disable` and `/rotate-secret` (LLD 16: "rotatable"). Users carry `last_active_at` (latest session refresh) for F22 |
 | D-25 | API client rate limit on creation | Accepted from 1 to 600 per minute: the LLD gives 600 per API client as the limit |
 | D-26 | GxP reason for access changes | Role edits, permission changes, assignments and transfers are GMP-relevant ("role and permission changes", LD-82): a reason is required in GxP mode. User profile edits and deactivation are not |
 | D-27 | `unread_notifications` in `/me` | `null` until notifications exist (unit 10); the shell draws no count rather than a sample one |
+| D-28 | Site status transitions (the LLD lists the statuses only) | staged to active, staged to inactive, active to inactive, inactive to active; nothing returns to staged. Enforced by the service and a trigger |
+| D-29 | Status values of locations and departments (the LLD names the column only) | active and inactive. The default location must be active and cannot be deactivated until another location is the default |
+| D-30 | Code format and uniqueness | 1 to 32 letters, digits, `.`, `_` or `-`; unique per customer ignoring case. Location codes are unique across the customer, not only per site, because the public API accepts a location code on its own (LLD 12) |
+| D-31 | Validity of a user's department and home site | When set or changed, the department must be active and the home site staged or active; a value a user already has is kept if it is later deactivated. Role assignments may name a site in any status |
+| D-32 | Organisation changes and the outbox | Audited in the same transaction; no events, because the event catalogue (LLD 13) has none for organisation |
+| D-33 | Who sees the reference lists | `GET sites, locations, departments` return every record to any authenticated principal, not only the caller's sites: they are reference data (LLD 12 "Authenticated"), needed for example to pick a transfer destination |
 
 ## 6. Findings
 
@@ -231,6 +269,7 @@ Small gaps in the LLD that had to be filled to write code. Each is a narrow choi
 | F-02 | FastAPI 0.163 no longer copies routes when a router is included; it nests them | Route discovery uses `fastapi.routing.iter_route_contexts`. End-to-end tests prove every tenant route passes the pipeline |
 | F-03 | `str.isdigit()` accepts digits of other scripts, and the constant-time comparison then raises | Found by a test: an authenticator code typed in Arabic-Indic digits would have produced a 500. Codes are now ASCII digits only |
 | F-04 | A process's first change-feed poll only records the current position | Changes made before that first poll arrive through the 60-second snapshot refresh instead. This is the designed behaviour (LLD 6.4); noted because tests must poll once before making a change they expect as a notice |
+| F-05 | Python's time-zone database and PostgreSQL's differ: Python accepted the legacy alias `Asia/Calcutta`, which this PostgreSQL build does not know, so the service accepted a site the database then refused (a 500, found by a test) | PostgreSQL alone decides which timezones are valid (I-39). Recommend stating in LLD section 3 that the database's time-zone data is the reference |
 
 ## 7. Unresolved issues and external dependencies
 
@@ -241,11 +280,8 @@ Small gaps in the LLD that had to be filled to write code. Each is a narrow choi
 | U-03 | Licensable module list (open item #5, Product) | Current tagging of LD-72 is seeded as four modules | Product |
 | U-04 | Repository, CI/CD and environments (Q32) | No pipeline definition yet; `pipelines/database` is a CLI ready to be called from one | ZongoVita |
 | U-05 | Design sign-off status | Project Context records development as gated on HLD/LLD sign-off, with the revised HLD's approval "not recorded". Development was started on the product owner's instruction of 16 November | Product owner aware |
-
-Open items #8 to #37 in HLD section 11 are unchanged. Their defaults will be implemented as customer settings as each module is built.
-
-| U-06 | Wireframes are missing for screens the LLD requires: MFA enrolment and challenge, recovery-code entry, activation, user and role forms (add, invite, edit, assign), GxP signature dialog and reason field, support grants and break-glass, emergency issue, requester (Type 4) screens, several Platform Console screens | Not invented (product owner, 17 November). Consequence: in `core` mode nobody can finish signing in from the browser, because the authenticator step has no screen; the BFF endpoints exist and the browser tests sign in through them. F22's add, invite and edit buttons say their form is not designed | Design |
-| U-07 | Points where frames disagree with the design or each other (Docs/UI_Implementation.md section 10) | Permissions and Platform Console scope are decided (LLD wins; out-of-scope console content removed). Still open: approval policy shape and the F23/F61 chain (#8), taxonomy depth (#11), the console's platform-wide module flags (no `/platform/v1` resource) | Product owner |
+| U-06 | Wireframes are missing for screens the LLD requires: MFA enrolment and challenge, recovery-code entry, activation, user and role forms (add, invite, edit, assign), site, location and department forms (create, edit, change status, move the default location), GxP signature dialog and reason field, support grants and break-glass, emergency issue, requester (Type 4) screens, several Platform Console screens | Not invented (product owner, 17 November). Consequence: in `core` mode nobody can finish signing in from the browser, because the authenticator step has no screen; the BFF endpoints exist and the browser tests sign in through them. F22's add, invite and edit buttons say their form is not designed | Design |
+| U-07 | Points where frames disagree with the design or each other (Docs/UI_Implementation.md section 10) | Permissions and Platform Console scope are decided (LLD wins; out-of-scope console content removed). Still open: approval policy shape and the F23/F61 chain (#8), taxonomy depth (#11), the console's platform-wide module flags (no `/platform/v1` resource); F21's site type and city, which the LLD's site record does not have (shown as a dash) | Product owner |
 | U-08 | The common-password list is a seed of well-known long passwords | Production needs a full breached-password corpus; which one, and whether checked offline, is not decided (LLD section 16 names only "a common-password list") | Product owner / security |
 | U-09 | No email channel (#21): activation codes are returned to the creator, to hand over | Works as the LLD describes "until an email channel exists" | ZongoVita |
 | U-10 | Argon2id cost must be tuned to about 250 ms on the target hardware (section 16) | Defaults are RFC 9106's second recommendation (3 passes, 64 MiB, 4 lanes) until the hardware is known | ZongoVita cloud |
@@ -253,12 +289,16 @@ Open items #8 to #37 in HLD section 11 are unchanged. Their defaults will be imp
 | U-12 | The BFF's own service credential (AD-64) for passing request IDs to Core | Not wired: Core assigns request IDs to BFF calls. The BFF's signing key needs the secrets manager (U-01) | ZongoVita |
 | U-13 | Refresh-token rotation behind several BFF instances | One process exchanges a refresh token once (I-33); two instances could each present it and revoke the session. Needs session affinity at the load balancer or a shared exchange | ZongoVita (deployment) |
 | U-14 | Rate limits are per Core instance (I-28) | A customer behind N instances can reach N times the limit. A shared limiter would need a shared store, which the LLD rules out (section 16) | Architecture, if exact limits matter |
+| U-15 | Deactivating a site or location that holds stock | The LLD says staged sites hold no stock and that receiving needs an active site, but not whether a site or location with stock may be deactivated. Unit 4 cannot check stock (no stock tables yet); Inventory Core (unit 9) needs the rule | Product owner |
 
-## 8. Next unit: organisation and licence limits
+Open items #8 to #37 in HLD section 11 are unchanged. Their defaults will be implemented as customer settings as each module is built.
 
-Scope from LLD 5.1, 6.6 and 12:
+U-11, U-13 and U-14 are unchanged by unit 4: nothing in it needed them decided.
 
-- `org.sites` (staged, active, inactive; staged and active count against the licence site limit), `org.locations` (exactly one default location per site), `org.departments`; endpoints `sites`, `locations`, `departments` (`org.site.manage`, `org.location.manage`, `org.department.manage`) and the authenticated reference-data reads.
-- Foreign keys from `iam.users.department_id`, `home_site_id` and `iam.role_assignments.site_id` (added `NOT VALID`, then validated), and the site check on assignments (D-18, D-21).
-- `/ui/v1/me` returns the person's sites and home site; F21 Locations and the shell's location selector read them; F22 shows site codes.
-- Licence site limit under a transaction-level advisory lock, as the user limit is.
+## 8. Next unit: platform administration and provisioning
+
+Scope from LLD 6.6, 6.8 and 15 (Platform Console):
+
+- `/platform/v1` for ZongoVita staff: customers, licences, provisioning runs, migrations, break-glass requests, platform users, platform audit; staff sign-in with mandatory MFA (AD-23) through the console's own BFF.
+- Provisioning runs as the resumable step sequence of LLD 6.6 (register, database and roles, migrate, seed, super admin and recovery approvers, activate), each step safe to repeat; the super admin is created with the access module's bootstrap function (unit 3). The pipeline job interface the Platform Service triggers (U-04).
+- The Platform Console screens F51 to F53 on real data where `/platform/v1` provides it; sites and users used per customer need Core to report usage, as the Platform Service holds no customer data (AD-13).

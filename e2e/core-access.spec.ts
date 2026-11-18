@@ -116,7 +116,7 @@ test("F22 lists the customer's real users", async ({ browser }) => {
   for (const name of ["Arjun Mehta", "Priya Sharma", "Suresh Patil", "Meera Joshi"]) {
     await expect(table.getByRole("row", { name: new RegExp(name) })).toBeVisible();
   }
-  await expect(table.getByRole("row", { name: /Suresh Patil/ })).toContainText("1 site");
+  await expect(table.getByRole("row", { name: /Suresh Patil/ })).toContainText("WH-BLR-01");
   await expect(table.getByRole("row", { name: /Priya Sharma/ })).toContainText("All locations");
   await expect(table.getByRole("row", { name: /Arjun Mehta/ })).toContainText("today");
   // The capability summary is read from the live matrix.
@@ -124,6 +124,43 @@ test("F22 lists the customer's real users", async ({ browser }) => {
   await page.getByRole("button", { name: "+ Add user" }).click();
   await expect(page.getByText("has no approved design yet")).toBeVisible();
   await page.context().close();
+});
+
+test("F21 shows the customer's real sites, their status and who is assigned there", async ({ browser }) => {
+  const page = await as(browser, "type1");
+  await page.goto("/locations");
+  await expect(page.getByText("Multi-location from day one (Q9) — 1 live, 3 staged")).toBeVisible();
+  const table = page.getByRole("table");
+  await expect(table.getByRole("row")).toHaveCount(5);
+  const blr = table.getByRole("row", { name: /WH-BLR-01/ });
+  await expect(blr).toContainText("Bengaluru Central Warehouse");
+  await expect(blr).toContainText("Live");
+  await expect(table.getByRole("row", { name: /WH-PUN-02/ })).toContainText("Staged");
+  // Users assigned at the live site: Suresh (Type 3) and Meera (Type 4).
+  await expect(page.getByText("Users: 2 · Type 3 ×1 · Type 4 ×1")).toBeVisible();
+  // Not in the LLD's site record, or waiting for later units: shown as a dash, not invented.
+  await expect(blr.getByRole("cell", { name: "—" })).toHaveCount(5);
+  await expect(page.getByText("Remaining locations go live within 6 months")).toHaveCount(0);
+  await page.getByRole("button", { name: "+ Add location" }).click();
+  await expect(page.getByText("has no approved design yet")).toBeVisible();
+  await page.context().close();
+});
+
+test("the location selector offers the person's active sites from /ui/v1/me", async ({ browser }) => {
+  const store = await as(browser, "type3");
+  await store.goto("/dashboard");
+  const storeScope = store.getByRole("combobox", { name: "Location" });
+  await expect(storeScope.getByRole("option")).toHaveText(["WH-BLR-01 · Bengaluru Central Warehouse"]);
+  await store.context().close();
+
+  const manager = await as(browser, "type2");
+  await manager.goto("/dashboard");
+  const scope = manager.getByRole("combobox", { name: "Location" });
+  // Priya works at every site, but the three staged sites hold no stock and are not offered: the
+  // only active site is the whole choice (and her home site).
+  await expect(scope.getByRole("option")).toHaveText(["WH-BLR-01 · Bengaluru Central Warehouse"]);
+  await expect(scope.locator("option:checked")).toHaveText("WH-BLR-01 · Bengaluru Central Warehouse");
+  await manager.context().close();
 });
 
 test("the BFF refuses writes without the CSRF header or from another origin", async ({ browser }) => {

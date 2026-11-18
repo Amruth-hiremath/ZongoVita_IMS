@@ -63,6 +63,10 @@ TABLE_ACCESS: dict[str, AccessClass] = {
     "iam.role_permissions": AccessClass.DELETABLE,
     # Revoked, never deleted.
     "iam.role_assignments": AccessClass.BUSINESS,
+    # Organisation (unit 4): deactivated, never deleted.
+    "org.sites": AccessClass.BUSINESS,
+    "org.locations": AccessClass.BUSINESS,
+    "org.departments": AccessClass.BUSINESS,
 }
 
 #: Tables where UPDATE is granted on named columns only.

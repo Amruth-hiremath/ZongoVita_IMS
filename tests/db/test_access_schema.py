@@ -77,6 +77,24 @@ async def _user(conn: AsyncConnection, status: str = "invited") -> UUID:
     return user_id
 
 
+async def _site(conn: AsyncConnection) -> UUID:
+    """A site and its default location (one transaction: the default is checked at commit)."""
+    site_id = uuid7()
+    code = f"S{site_id.hex[-10:]}"
+    await conn.execute(
+        text("INSERT INTO org.sites (id, code, name, timezone) VALUES (:id, :code, 'Site', 'Asia/Kolkata')"),
+        {"id": site_id, "code": code},
+    )
+    await conn.execute(
+        text(
+            "INSERT INTO org.locations (id, site_id, code, name, is_default) "
+            "VALUES (:id, :site, :code, 'Main', true)"
+        ),
+        {"id": uuid7(), "site": site_id, "code": f"{code}-MAIN"},
+    )
+    return site_id
+
+
 async def _assign(conn: AsyncConnection, user_id: UUID, role_id: UUID, site_id: UUID | None = None) -> UUID:
     assignment_id = uuid7()
     await conn.execute(
@@ -371,7 +389,7 @@ async def test_assignments_are_revoked_never_changed_or_deleted(app_engine: Asyn
     await _ensure_super_admin(app_engine)
     async with app_engine.begin() as conn:
         user = await _user(conn)
-        assignment = await _assign(conn, user, await _role(conn, "user_type_3"), uuid7())
+        assignment = await _assign(conn, user, await _role(conn, "user_type_3"), await _site(conn))
         await _fails(
             conn,
             "UPDATE iam.role_assignments SET role_id = :r WHERE id = :id",

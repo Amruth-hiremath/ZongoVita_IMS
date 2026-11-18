@@ -20,14 +20,11 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
   const path = (await headers()).get(PATH_HEADER) ?? "/dashboard";
 
   const siteOptions = me.sites.map((site) => ({ value: site.id, label: `${site.code} · ${site.name}` }));
-  const scope: ShellScope = {
-    ariaLabel: "Location",
-    // People who work across every site start on "All locations"; others on their own site.
-    // Until Core lists sites (organisation module), only "All locations" can be offered.
-    options:
-      me.sites.length === 1 ? siteOptions : [{ value: "all", label: "All locations" }, ...siteOptions],
-    value: me.home_site_id ?? "all",
-  };
+  const options = me.sites.length === 1 ? siteOptions : [{ value: "all", label: "All locations" }, ...siteOptions];
+  // /ui/v1/me lists the active sites the person works at. They start on their home site when it is
+  // one of those; otherwise on "All locations" (or their only site).
+  const home = me.sites.some((site) => site.id === me.home_site_id) ? me.home_site_id! : options[0]!.value;
+  const scope: ShellScope = { ariaLabel: "Location", options, value: home };
 
   return (
     <AppShell

@@ -82,6 +82,8 @@ def _user(view: UserView, now_locked: bool = False) -> s.UserOut:
         login_identifier=p.login_identifier,
         display_name=p.display_name,
         email=p.email,
+        department_id=p.department_id,
+        home_site_id=p.home_site_id,
         status=p.status,  # type: ignore[arg-type]
         mfa_enrolled=p.mfa_enrolled_at is not None,
         locked=now_locked,
@@ -160,8 +162,8 @@ async def me(uow: Uow, access: Access) -> JSONResponse:
         user_type_no=view.user_type_no,
         is_super_admin=view.is_super_admin,
         role_label=view.role_label,
-        sites=[],
-        home_site_id=None,
+        sites=[s.MeSite(id=site.id, code=site.code, name=site.name) for site in view.sites],
+        home_site_id=view.home_site_id,
         permissions=[_permission(p) for p in view.permissions],
         licence=s.MeLicence(
             state=view.licence_state,
@@ -222,6 +224,8 @@ async def create_user(body: s.CreateUser, uow: Uow, access: Access) -> JSONRespo
         email=body.email,
         assignments=_assignments(body.assignments),
         reason=body.reason,
+        department_id=body.department_id,
+        home_site_id=body.home_site_id,
     )
     out = s.CreatedUserOut(
         user=_user_out(created.user, uow),
@@ -237,7 +241,13 @@ async def update_user(
     user_id: UUID, body: s.UpdateUser, version: IfMatch, uow: Uow, access: Access
 ) -> JSONResponse:
     view = await access.update_user(
-        uow, user_id, expected_version=version, display_name=body.display_name, email=body.email
+        uow,
+        user_id,
+        expected_version=version,
+        display_name=body.display_name,
+        email=body.email,
+        department_id=body.department_id,
+        home_site_id=body.home_site_id,
     )
     return _with_etag(_user_out(view, uow), view.profile.version)
 

@@ -130,10 +130,12 @@ def build_app(
     routers: Sequence[APIRouter] = (),
 ) -> FastAPI:
     """The Core application with every module built so far, in dependency order: identity
-    (credentials, principal stage), then access control (rate limits, authorisation, /me)."""
+    (credentials, principal stage), organisation (sites, locations, departments), then access
+    control (rate limits, authorisation, /me), which uses both."""
     from ims_core.modules.access import AccessModule  # noqa: PLC0415
     from ims_core.modules.identity import IdentityModule  # noqa: PLC0415
     from ims_core.modules.identity.public import PrincipalStage  # noqa: PLC0415
+    from ims_core.modules.organisation import OrganisationModule  # noqa: PLC0415
 
     access = AccessModule(limits=limits)
     return create_app(
@@ -141,7 +143,7 @@ def build_app(
         runtime=runtime,
         stages=access.stages(PrincipalStage()),
         routers=routers,
-        modules=[IdentityModule(hasher), access],
+        modules=[IdentityModule(hasher), OrganisationModule(), access],
         run_change_feed=run_change_feed,
     )
 

@@ -46,6 +46,7 @@ from ims_core.modules.identity.public import (
     read_profile,
     read_profiles,
 )
+from ims_core.modules.organisation.public import SiteRow, active_sites, read_department, sites_by_id
 
 if TYPE_CHECKING:
     from ims_common.clock import Clock
@@ -84,6 +85,9 @@ class MeView:
     user_type_no: int | None
     is_super_admin: bool
     role_label: str
+    #: Active sites the person works at: every active site if any assignment covers all sites.
+    sites: list[SiteRow]
+    home_site_id: UUID | None
     permissions: list[EffectivePermission]
     licence_state: LicenceState
     grace_ends_at: datetime | None
@@ -213,6 +217,11 @@ class AccessService:
         held = [roles[a.role_id] for a in assignments if a.role_id in roles]
         super_admin = any(a.super_admin for a in assignments)
         types = sorted(role.user_type_no for role in held if role.user_type_no is not None)
+        if super_admin or any(a.site_id is None for a in assignments):
+            sites = await active_sites(uow)
+        else:
+            scoped = await sites_by_id(uow, {a.site_id for a in assignments if a.site_id is not None})
+            sites = sorted((s for s in scoped.values() if s.status == "active"), key=lambda s: s.code.upper())
         snapshot = uow.ctx.snapshot
         state = uow.ctx.licence_state
         return MeView(
@@ -223,6 +232,8 @@ class AccessService:
             user_type_no=types[0] if types else None,
             is_super_admin=super_admin,
             role_label=role_label(held, super_admin=super_admin),
+            sites=sites,
+            home_site_id=profile.home_site_id,
             permissions=effective_list(uow.grants),
             licence_state=state,
             grace_ends_at=snapshot.grace_ends_at if state is LicenceState.GRACE else None,
@@ -273,6 +284,25 @@ class AccessService:
         if own_profile_edit and _actor(uow) == user_id:
             return
         raise DomainError(ErrorCode.PERMISSION_DENIED, SUPER_ADMIN_PROTECTED)
+
+    @staticmethod
+    async def _check_placement(
+        uow: UnitOfWork,
+        *,
+        department_id: UUID | None,
+        home_site_id: UUID | None,
+        current: UserProfile | None = None,
+    ) -> None:
+        """A user's department must be active and their home site not inactive. Values a user
+        already has are kept even if they have since been deactivated."""
+        if department_id is not None and (current is None or current.department_id != department_id):
+            department = await read_department(uow, department_id)
+            if department is None or department.status != "active":
+                raise _invalid("department_id", "no such active department")
+        if home_site_id is not None and (current is None or current.home_site_id != home_site_id):
+            site = (await sites_by_id(uow, [home_site_id])).get(home_site_id)
+            if site is None or site.status == "inactive":
+                raise _invalid("home_site_id", "no such staged or active site")
 
     @staticmethod
     def _require_can_grant(uow: UnitOfWork, codes: Iterable[str], site_id: UUID | None) -> None:
@@ -334,12 +364,20 @@ class AccessService:
         email: str | None,
         assignments: Sequence[AssignmentRequest],
         reason: str | None,
+        department_id: UUID | None = None,
+        home_site_id: UUID | None = None,
     ) -> CreatedUserView:
         """Reserve -> create -> activate (LLD 6.3) with the user's role assignments in the same
         transaction. Every assignment is checked before anything is written."""
+        await self._check_placement(uow, department_id=department_id, home_site_id=home_site_id)
         roles = await self._check_assignments(uow, assignments)
         created: CreatedUser = await self._identity.create_user(
-            uow, login_identifier=login_identifier, display_name=display_name, email=email
+            uow,
+            login_identifier=login_identifier,
+            display_name=display_name,
+            email=email,
+            department_id=department_id,
+            home_site_id=home_site_id,
         )
         for request in assignments:
             await self._insert_assignment(
@@ -352,11 +390,31 @@ class AccessService:
         )
 
     async def update_user(
-        self, uow: UnitOfWork, user_id: UUID, *, expected_version: int, display_name: str, email: str | None
+        self,
+        uow: UnitOfWork,
+        user_id: UUID,
+        *,
+        expected_version: int,
+        display_name: str,
+        email: str | None,
+        department_id: UUID | None = None,
+        home_site_id: UUID | None = None,
     ) -> UserView:
         await self._protect_super_admin(uow, user_id, own_profile_edit=True)
+        current = await read_profile(uow.db, user_id)
+        if current is None:
+            raise DomainError(ErrorCode.NOT_FOUND)
+        await self._check_placement(
+            uow, department_id=department_id, home_site_id=home_site_id, current=current
+        )
         await self._identity.update_profile(
-            uow, user_id, expected_version=expected_version, display_name=display_name, email=email
+            uow,
+            user_id,
+            expected_version=expected_version,
+            display_name=display_name,
+            email=email,
+            department_id=department_id,
+            home_site_id=home_site_id,
         )
         return await self.get_user(uow, user_id)
 
@@ -374,7 +432,10 @@ class AccessService:
     ) -> dict[UUID, repository.RoleRow]:
         roles: dict[UUID, repository.RoleRow] = {}
         seen: set[tuple[UUID, UUID | None]] = set()
+        sites = await sites_by_id(uow, {r.site_id for r in requests if r.site_id is not None})
         for index, request in enumerate(requests):
+            if request.site_id is not None and request.site_id not in sites:
+                raise _invalid(f"assignments[{index}].site_id", "no such site")
             key = (request.role_id, request.site_id)
             if key in seen:
                 raise _invalid(f"assignments[{index}]", "is listed twice")

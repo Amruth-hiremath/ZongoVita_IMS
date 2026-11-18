@@ -64,18 +64,23 @@ async def insert_user(
     activation_code_hash: bytes,
     activation_expires_at: datetime,
     actor: UUID | None,
+    department_id: UUID | None = None,
+    home_site_id: UUID | None = None,
 ) -> None:
     await conn.execute(
         text(
-            "INSERT INTO iam.users (id, login_identifier, display_name, email, status, "
-            "activation_code_hash, activation_expires_at, created_by, updated_by) "
-            "VALUES (:id, :login, :name, :email, 'invited', :code, :expires, :actor, :actor)"
+            "INSERT INTO iam.users (id, login_identifier, display_name, email, department_id, home_site_id, "
+            "status, activation_code_hash, activation_expires_at, created_by, updated_by) "
+            "VALUES (:id, :login, :name, :email, :department, :home_site, 'invited', :code, :expires, "
+            ":actor, :actor)"
         ),
         {
             "id": user_id,
             "login": login_identifier,
             "name": display_name,
             "email": email,
+            "department": department_id,
+            "home_site": home_site_id,
             "code": activation_code_hash,
             "expires": activation_expires_at,
             "actor": actor,
@@ -432,6 +437,8 @@ class UserProfile:
     login_identifier: str
     display_name: str
     email: str | None
+    department_id: UUID | None
+    home_site_id: UUID | None
     status: str
     mfa_enrolled_at: datetime | None
     locked_until: datetime | None
@@ -449,7 +456,8 @@ _LAST_ACTIVE = (
     ", (SELECT max(s.last_refreshed_at) FROM iam.sessions s WHERE s.user_id = iam.users.id) AS last_active_at"
 )
 _PROFILE_COLUMNS = (
-    "id, login_identifier, display_name, email, status, mfa_enrolled_at, locked_until, "
+    "id, login_identifier, display_name, email, department_id, home_site_id, status, mfa_enrolled_at, "
+    "locked_until, "
     "activation_expires_at, created_at, updated_at, version"
 )
 _READ_PROFILE = text("SELECT " + _PROFILE_COLUMNS + _LAST_ACTIVE + " FROM iam.users WHERE id = :id")  # noqa: S608
@@ -502,16 +510,31 @@ async def list_profiles(
 
 
 async def update_profile(
-    conn: AsyncConnection, user_id: UUID, *, display_name: str, email: str | None, actor: UUID | None
+    conn: AsyncConnection,
+    user_id: UUID,
+    *,
+    display_name: str,
+    email: str | None,
+    department_id: UUID | None,
+    home_site_id: UUID | None,
+    actor: UUID | None,
 ) -> int:
     return int(
         (
             await conn.execute(
                 text(
-                    "UPDATE iam.users SET display_name = :name, email = :email, updated_at = now(), "
+                    "UPDATE iam.users SET display_name = :name, email = :email, "
+                    "department_id = :department, home_site_id = :home_site, updated_at = now(), "
                     "updated_by = :actor, version = version + 1 WHERE id = :id RETURNING version"
                 ),
-                {"id": user_id, "name": display_name, "email": email, "actor": actor},
+                {
+                    "id": user_id,
+                    "name": display_name,
+                    "email": email,
+                    "department": department_id,
+                    "home_site": home_site_id,
+                    "actor": actor,
+                },
             )
         ).scalar_one()
     )

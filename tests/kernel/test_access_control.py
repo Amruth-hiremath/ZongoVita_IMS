@@ -32,9 +32,6 @@ from tests.support.tenant import Tenant, full_app
 
 pytestmark = pytest.mark.db
 
-SITE_A = UUID("018f6f2a-0000-7000-8000-0000000000a1")
-SITE_B = UUID("018f6f2a-0000-7000-8000-0000000000b2")
-
 
 # --------------------------------------------------------------- routes used only by tests
 def _test_routers() -> list[ImsRouter]:
@@ -77,6 +74,8 @@ async def _tenant(
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://core") as client:
         tenant = Tenant(app=app, client=client, runtime=core, clock=clock, customer=customer)
         await tenant.bootstrap_super_admin(f"{code}.admin@zongovita.in")
+        await tenant.create_site("A")
+        await tenant.create_site("B")
         yield tenant
 
 
@@ -123,21 +122,23 @@ async def test_me_reports_effective_permissions_per_site_and_the_licence(tenant:
     assert body["unread_notifications"] is None
 
     store = await tenant.create_person(
-        f"{tenant.customer.code}.store@zongovita.in", [("user_type_3", str(SITE_A))], name="Suresh Patil"
+        f"{tenant.customer.code}.store@zongovita.in",
+        [("user_type_3", str(tenant.site_a))],
+        name="Suresh Patil",
     )
     mine = (await tenant.get("/ui/v1/me", store)).json()
     assert mine["is_super_admin"] is False
     assert mine["role_label"] == "User Type 3"
     perms = _perms(mine)
     assert set(perms) == SEEDED_BY_CODE["user_type_3"].permissions
-    assert perms["inventory.stock.view"] == [str(SITE_A)], "site-scoped: only where assigned"
+    assert perms["inventory.stock.view"] == [str(tenant.site_a)], "site-scoped: only where assigned"
     assert perms["catalog.item.view"] is None, "not site-scoped: everywhere"
 
 
 # ------------------------------------------------------------------- step 8: the gate
 async def test_declared_permission_and_site_scope_are_enforced(tenant: Tenant) -> None:
     code = tenant.customer.code
-    store = await tenant.create_person(f"{code}.store@zongovita.in", [("user_type_3", str(SITE_A))])
+    store = await tenant.create_person(f"{code}.store@zongovita.in", [("user_type_3", str(tenant.site_a))])
     requester = await tenant.create_person(f"{code}.req@zongovita.in", [("user_type_4", None)])
 
     assert _problem(await tenant.get("/ui/v1/users", requester)) == (403, "PERMISSION_DENIED")
@@ -147,15 +148,18 @@ async def test_declared_permission_and_site_scope_are_enforced(tenant: Tenant) -
     )
 
     # The record's site decides, not where else the caller holds the permission.
-    assert (await tenant.get(f"/ui/v1/test/stock-at/{SITE_A}", store)).status_code == 200
-    assert _problem(await tenant.get(f"/ui/v1/test/stock-at/{SITE_B}", store)) == (403, "SITE_SCOPE_DENIED")
-    assert _problem(await tenant.get(f"/ui/v1/test/stock-at/{SITE_A}", requester)) == (
+    assert (await tenant.get(f"/ui/v1/test/stock-at/{tenant.site_a}", store)).status_code == 200
+    assert _problem(await tenant.get(f"/ui/v1/test/stock-at/{tenant.site_b}", store)) == (
+        403,
+        "SITE_SCOPE_DENIED",
+    )
+    assert _problem(await tenant.get(f"/ui/v1/test/stock-at/{tenant.site_a}", requester)) == (
         403,
         "PERMISSION_DENIED",
     )
     admin = tenant.super_admin
     assert admin is not None
-    assert (await tenant.get(f"/ui/v1/test/stock-at/{SITE_B}", admin)).status_code == 200
+    assert (await tenant.get(f"/ui/v1/test/stock-at/{tenant.site_b}", admin)).status_code == 200
 
 
 # --------------------------------------------------------------------------------- users
@@ -255,7 +259,7 @@ async def test_managers_cannot_grant_what_they_do_not_hold(tenant: Tenant) -> No
     )
     await tenant.refresh_roles()
     site_admin = await tenant.create_person(
-        f"{code}.siteadmin@zongovita.in", [("site_user_admin", str(SITE_A))]
+        f"{code}.siteadmin@zongovita.in", [("site_user_admin", str(tenant.site_a))]
     )
     target = await tenant.create_person(f"{code}.target@zongovita.in", [])
 
@@ -270,11 +274,13 @@ async def test_managers_cannot_grant_what_they_do_not_hold(tenant: Tenant) -> No
     raiser = raiser_role.json()["id"]
     # Type 4 includes returns.return.create, which the site admin does not hold.
     denied = await tenant.post(
-        "/ui/v1/role-assignments", site_admin, assign(tenant.role_id("user_type_4"), SITE_A)
+        "/ui/v1/role-assignments", site_admin, assign(tenant.role_id("user_type_4"), tenant.site_a)
     )
     assert _problem(denied) == (403, "PERMISSION_DENIED")
     # Held at site A only: not at site B, and not "every site".
-    assert _problem(await tenant.post("/ui/v1/role-assignments", site_admin, assign(raiser, SITE_B))) == (
+    assert _problem(
+        await tenant.post("/ui/v1/role-assignments", site_admin, assign(raiser, tenant.site_b))
+    ) == (
         403,
         "SITE_SCOPE_DENIED",
     )
@@ -282,9 +288,9 @@ async def test_managers_cannot_grant_what_they_do_not_hold(tenant: Tenant) -> No
         403,
         "SITE_SCOPE_DENIED",
     )
-    granted = await tenant.post("/ui/v1/role-assignments", site_admin, assign(raiser, SITE_A))
+    granted = await tenant.post("/ui/v1/role-assignments", site_admin, assign(raiser, tenant.site_a))
     assert granted.status_code == 201, granted.text
-    duplicate = await tenant.post("/ui/v1/role-assignments", site_admin, assign(raiser, SITE_A))
+    duplicate = await tenant.post("/ui/v1/role-assignments", site_admin, assign(raiser, tenant.site_a))
     assert _problem(duplicate) == (409, "INVALID_STATE_TRANSITION")
 
     # A role manager cannot add a permission they lack to any role.
@@ -431,7 +437,7 @@ async def test_privilege_matrix_submit_writes_the_difference_and_takes_effect_at
     admin = tenant.super_admin
     assert admin is not None
     requester = await tenant.create_person(
-        f"{tenant.customer.code}.req@zongovita.in", [("user_type_4", str(SITE_A))]
+        f"{tenant.customer.code}.req@zongovita.in", [("user_type_4", str(tenant.site_a))]
     )
     assert _problem(await tenant.get("/ui/v1/users", requester)) == (403, "PERMISSION_DENIED")
 
@@ -460,7 +466,7 @@ async def test_privilege_matrix_submit_writes_the_difference_and_takes_effect_at
     assert change["added"] == ["access.user.manage", "inventory.stock.view"]
     assert change["removed"] == ["returns.return.create"]
     effective = {p["code"]: p["site_ids"] for p in change["effective"]}
-    assert effective["inventory.stock.view"] == [str(SITE_A)]
+    assert effective["inventory.stock.view"] == [str(tenant.site_a)]
     assert effective["access.user.manage"] is None
 
     # The same token, no wait: the access version moved, so no cached permission is served.

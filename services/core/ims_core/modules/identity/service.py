@@ -622,7 +622,14 @@ class IdentityService:
 
     # ==================================================================== creating principals
     async def create_user(
-        self, uow: UnitOfWork, *, login_identifier: str, display_name: str, email: str | None = None
+        self,
+        uow: UnitOfWork,
+        *,
+        login_identifier: str,
+        display_name: str,
+        email: str | None = None,
+        department_id: UUID | None = None,
+        home_site_id: UUID | None = None,
     ) -> CreatedUser:
         """Reserve -> create -> activate (LLD 6.3).
 
@@ -656,12 +663,20 @@ class IdentityService:
             activation_code_hash=domain.hash_code(code),
             activation_expires_at=expires,
             actor=actor,
+            department_id=department_id,
+            home_site_id=home_site_id,
         )
         await uow.audit.record(
             action="iam.user.created",
             entity_type="iam.user",
             entity_id=user_id,
-            after={"login_identifier": normalised, "display_name": display_name.strip(), "status": "invited"},
+            after={
+                "login_identifier": normalised,
+                "display_name": display_name.strip(),
+                "department_id": department_id,
+                "home_site_id": home_site_id,
+                "status": "invited",
+            },
         )
         await uow.events.publish(
             event_type=events.USER_CREATED,
@@ -716,8 +731,11 @@ class IdentityService:
         expected_version: int,
         display_name: str,
         email: str | None,
+        department_id: UUID | None = None,
+        home_site_id: UUID | None = None,
     ) -> repository.UserProfile:
-        """Edit a user's name and email (master data: If-Match on the row version, LLD 12)."""
+        """Edit a user's name, email, department and home site (master data: If-Match on the row
+        version, LLD 12). The caller has checked that the department and site exist."""
         if not display_name.strip():
             raise _invalid("display_name", "is required")
         user = await repository.read_profile(uow.db, user_id, lock=True)
@@ -725,12 +743,28 @@ class IdentityService:
             raise DomainError(ErrorCode.NOT_FOUND)
         if user.version != expected_version:
             raise DomainError(ErrorCode.VERSION_CONFLICT)
-        before = {"display_name": user.display_name, "email": user.email}
-        after = {"display_name": display_name.strip(), "email": email}
+        before = {
+            "display_name": user.display_name,
+            "email": user.email,
+            "department_id": user.department_id,
+            "home_site_id": user.home_site_id,
+        }
+        after = {
+            "display_name": display_name.strip(),
+            "email": email,
+            "department_id": department_id,
+            "home_site_id": home_site_id,
+        }
         if before == after:
             return user
         await repository.update_profile(
-            uow.db, user_id, display_name=display_name.strip(), email=email, actor=_actor(uow)
+            uow.db,
+            user_id,
+            display_name=display_name.strip(),
+            email=email,
+            department_id=department_id,
+            home_site_id=home_site_id,
+            actor=_actor(uow),
         )
         await uow.audit.record(
             action="iam.user.updated", entity_type="iam.user", entity_id=user_id, before=before, after=after

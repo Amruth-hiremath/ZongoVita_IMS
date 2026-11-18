@@ -6,6 +6,7 @@ import { userList } from "@/fixtures/users";
 import { formatDay } from "@/lib/dates";
 
 import { getPrivilegeMatrix, type MatrixRole } from "./privileges";
+import { siteDirectory, type Site } from "./sites";
 import { fromCore } from "./source";
 
 /**
@@ -25,7 +26,7 @@ export interface UserRow {
   display_name: string;
   email: string | null;
   role: UserRole | null;
-  /** "All locations", "2 sites", "WH-BLR-01". */
+  /** "All locations", "WH-BLR-01", "WH-BLR-01, WH-PUN-02". */
   scope_label: string;
   /** "today", "12 Nov 2026", "never". */
   last_active: string;
@@ -75,13 +76,15 @@ function roleOf(user: CoreUser): UserRole | null {
   return { name: parts.join(" · "), kind };
 }
 
-function scopeOf(user: CoreUser): string {
+function scopeOf(user: CoreUser, sites: Map<string, Site>): string {
   const ordinary = user.assignments.filter((a) => !a.super_admin);
   if (user.is_super_admin || ordinary.some((a) => a.site_id === null)) return "All locations";
-  const sites = new Set(ordinary.map((a) => a.site_id));
-  // Site codes come with the organisation module (unit 4); until then the count is shown.
-  if (sites.size === 0) return "—";
-  return sites.size === 1 ? "1 site" : `${sites.size} sites`;
+  const ids = [...new Set(ordinary.map((a) => a.site_id!))];
+  if (ids.length === 0) return "—";
+  return ids
+    .map((id) => sites.get(id)?.code ?? "unknown site")
+    .sort()
+    .join(", ");
 }
 
 function lastActive(at: string | null, now = new Date()): string {
@@ -91,11 +94,12 @@ function lastActive(at: string | null, now = new Date()): string {
 }
 
 /** F22 user list. */
-export function listUsers(): Promise<UserList> {
+export async function listUsers(): Promise<UserList> {
+  const sites = await siteDirectory();
   return fromCore<{ items: CoreUser[]; next_cursor: string | null }, UserList>(
     {
       endpoint: "GET /ui/v1/users",
-      note: "Rows show role assignments (user types, custom roles, site scope), last activity (latest session refresh) and status. Site codes need the organisation module (unit 4).",
+      note: "Rows show role assignments (user types, custom roles, site codes), last activity (latest session refresh) and status.",
     },
     "/users?limit=200",
     (page) => ({
@@ -104,7 +108,7 @@ export function listUsers(): Promise<UserList> {
         display_name: user.display_name,
         email: user.email,
         role: roleOf(user),
-        scope_label: scopeOf(user),
+        scope_label: scopeOf(user, sites),
         last_active: lastActive(user.last_active_at),
         status: user.status === "active" ? "active" : user.status === "invited" ? "invited" : "inactive",
       })),

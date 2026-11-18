@@ -163,7 +163,7 @@ All 43 frames are built: 40 in the Tenant Web App and 3 in the Platform Console.
 
 | Mode | Session | Screens |
 |---|---|---|
-| `core` (default) | IMS Core: the BFF keeps the access and refresh tokens in HttpOnly, Secure, SameSite=Lax cookies; the session is `GET /ui/v1/me` (name, role label, effective permissions per site, licence state); the proxy renews an expiring access token before a page renders | Shell, menu and screen guard from `/me`; F22 Users and F36 Privilege Matrix live (`GET /ui/v1/users`, `GET /ui/v1/privilege-matrix`, `PUT /ui/v1/roles/{id}/permissions`); every other screen still shows sample data, and a strip above the top bar says so |
+| `core` (default) | IMS Core: the BFF keeps the access and refresh tokens in HttpOnly, Secure, SameSite=Lax cookies; the session is `GET /ui/v1/me` (name, role label, effective permissions per site, the person's active sites and home site, licence state); the proxy renews an expiring access token before a page renders | Shell, menu, location selector and screen guard from `/me`; F21 Locations, F22 Users and F36 Privilege Matrix live (`GET /ui/v1/sites`, `GET /ui/v1/users`, `GET /ui/v1/privilege-matrix`, `PUT /ui/v1/roles/{id}/permissions`); every other screen still shows sample data, and a strip above the top bar says so |
 | `fixtures` | A wireframe persona chosen on the sign-in card (an HttpOnly cookie, no credential) | Every screen on sample data, for viewing frames whose backend does not exist yet |
 
 **Signing in** (`core` mode). F03 submits the work email and password to `POST /bff/auth/login`. Every sign-in then needs the authenticator step (LD-79): its screen, MFA enrolment, recovery-code entry and activation have no wireframes, so F03 reports "Password accepted" and states that the next screen has no approved design yet. The BFF endpoints for those steps exist and are exercised by the browser tests (`/bff/auth/mfa/enrol`, `/bff/auth/mfa`, `/bff/auth/activate`, `/bff/auth/logout`). Until the screens are designed, a person cannot finish signing in from the browser (Implementation_Progress U-06).
@@ -182,7 +182,7 @@ All 43 frames are built: 40 in the Tenant Web App and 3 in the Platform Console.
 | Actions that need the backend say so and name the endpoint | `e2e/tenant-shell.spec.ts` | Passing |
 | Security headers: per-request nonce CSP, `frame-ancestors 'none'`, HSTS, `nosniff` | `e2e/tenant-shell.spec.ts` | Passing |
 | Screens outside a persona's permissions are not rendered; menus follow the LLD's seeded permissions | `e2e/tenant-shell.spec.ts` | Passing |
-| Signed in to the real IMS Core: F03 password step, shell and menu from `/ui/v1/me` per seeded type, screen guard plus Core's own refusal, F22 live users, F36 save reaching another person's menu at once, BFF CSRF and Origin checks, token renewal before render | `e2e/core.setup.ts` (sign-in through the BFF with real TOTP codes), `e2e/core-access.spec.ts`, against `tools/e2e_backend.py` | Passing |
+| Signed in to the real IMS Core: F03 password step, shell and menu from `/ui/v1/me` per seeded type, screen guard plus Core's own refusal, F21 live sites with assigned users, F22 live users with site codes, the location selector per person, F36 save reaching another person's menu at once, BFF CSRF and Origin checks, token renewal before render | `e2e/core.setup.ts` (sign-in through the BFF with real TOTP codes), `e2e/core-access.spec.ts`, against `tools/e2e_backend.py` | Passing |
 | Visual match with the wireframes | Each screen captured at 1440 × 900 beside its frame and compared section by section | Layouts, labels, columns, pills and tones match. Remaining differences are listed in section 10 |
 | TypeScript contracts match the Python ones; sample data reached only through `src/data`; no inline styles | `tests/static/test_typescript_contracts.py` | Passing |
 | Types and lint | `npm run typecheck`, `npm run lint` | Clean |
@@ -210,6 +210,7 @@ Screens the LLD requires but the wireframes do not draw. These have to be design
 | MFA enrolment (authenticator QR code, recovery codes) and MFA challenge (code or recovery code) | 6.2, LD-79, section 15 "Sign-in includes MFA enrolment, MFA challenge and recovery-code entry" |
 | Account activation with the one-time code; password change | 6.2 |
 | Add, invite and edit a user; assign and revoke roles at sites; create and edit custom roles; super-admin transfer; API clients (create, show the secret once, rotate, disable). Core has every endpoint (unit 3) | 7, 12 |
+| Create and edit sites (with their default location), activate and deactivate them; the stock-holding locations inside a site (create, edit, make default, activate, deactivate); departments. F21 draws sites only, and its "+ Add location" and edit buttons have no form. Core has every endpoint (unit 4) | 5.1, 12 |
 | GxP signature dialog (password, TOTP, meaning) and the reason-for-change field | 8, section 15 |
 | Support grants and recovery approvers (super admin); pending break-glass approvals | 7, section 15 |
 | Emergency issue in read-only licence state | LD-86, section 15 |
@@ -219,14 +220,17 @@ Screens the LLD requires but the wireframes do not draw. These have to be design
 <!-- generated: ui-dependencies begin -->
 ### Tenant Web App
 
-Reads connected to IMS Core (2):
+Reads connected to IMS Core (5):
 
 | Endpoint | Data function file | Notes |
 |---|---|---|
 | `GET /ui/v1/privilege-matrix` | `data/privileges.ts` | Rows are the permission catalogue grouped by the LLD's module groups; F36's twelve capability rows are not in the LLD. |
-| `GET /ui/v1/users` | `data/users.ts` | Rows show role assignments (user types, custom roles, site scope), last activity (latest session refresh) and status. Site codes need the organisation module (unit 4). |
+| `GET /ui/v1/sites` | `data/locations.ts` | The frame calls sites 'locations'. Type and city are not in the LLD's site record (code, name, timezone, status); item count and stock value need Inventory Core (unit 9); the SKU rule needs numbering schemes (unit 8). |
+| `GET /ui/v1/sites` | `data/sites.ts` | Site codes for records that carry a site id. |
+| `GET /ui/v1/users` | `data/locations.ts` | F21 counts the users assigned at each site, by user type. |
+| `GET /ui/v1/users` | `data/users.ts` | Rows show role assignments (user types, custom roles, site codes), last activity (latest session refresh) and status. |
 
-Reads served from sample data (59):
+Reads served from sample data (58):
 
 | Endpoint | Data function file | What the screen needs beyond the LLD's description |
 |---|---|---|
@@ -273,7 +277,6 @@ Reads served from sample data (59):
 | `GET /ui/v1/returns` | `data/returns.ts` | Needs returns in flight with stage and state, the KPI counts, the quarantine record of a return awaiting verdict (store validation, hold since, vendor and PO), disposition options from GET /ui/v1/settings, and per-vendor FAIL roll-up from GET /ui/v1/supplier-quality. |
 | `GET /ui/v1/returns` | `data/returns.ts` | Store queue: returns at this site with the store's last action, the return being validated (ordered vs supplied), routing by reason code (GET /ui/v1/reason-codes) and per-vendor poor-quality rates from GET /ui/v1/supplier-quality. |
 | `GET /ui/v1/settings` | `data/item-form.ts` | Internal PO lead time, the manual part of total lead time (FB-18). |
-| `GET /ui/v1/sites` | `data/locations.ts` | The frame calls sites 'locations'. Each row needs type, city, item count, stock value, SKU numbering rule, go-live status (live / staged) and a count of assigned users by user type. |
 | `GET /ui/v1/stock` | `data/dashboard.ts` | No dashboard summary resource. Needs stock value, item and location counts, low-stock alert count with critical count (GET /ui/v1/alerts), requests to approve, locked units and live locks, dead-stock value. |
 | `GET /ui/v1/stock` | `data/issuance.ts` | Rows need locked and quarantined split out of on hand, free, and the reference holding the lock (issue request or return) with its state; the tiles need counts of active locks, units locked by UoM, over-issue attempts blocked at scan (Q7) and the lock timeout setting (GET /ui/v1/settings). |
 | `GET /ui/v1/stock` | `data/transfers.ts` | Free stock per source location (locked units excluded) for each line; also needs GET /ui/v1/locations for the from/to lists, GET /ui/v1/reason-codes for reasons, and the routing preview from GET /ui/v1/approval-policies, which no endpoint returns for a draft yet. |
@@ -399,6 +402,18 @@ Resolved by the product owner's authority rule (17 November 2026, top of this do
 | Sign in "as Type 2 / Type 3" | F03 two sign-in buttons | One "Sign in": what a person may do comes from their role assignments, not a choice at sign-in (`fixtures` mode keeps the persona buttons) |
 | Type 1 is the super admin | F36 "Type 1 · super admin"; F22 Type 1 pill dark | The super admin is one person holding the separate Super Admin role (HLD, #10); F36 shows a fixed Super Admin column and Type 1 as "all but reserved" |
 
+**F21 on the LLD's organisation model** (unit 4).
+
+| Point | Frame | Built |
+|---|---|---|
+| What F21 calls a location | Each card and row is a site (WH-BLR-01, a warehouse); the LLD's locations are stock-holding stores inside a site | Rows are sites (`GET /ui/v1/sites`). The locations inside a site have endpoints but no screen (section 9) |
+| Status | "Live", "Staged" | The LLD's site status: active shows as "Live", staged as "Staged", inactive as "Inactive" |
+| Type and city | "Warehouse", "Bengaluru, KA" | Not in the LLD's site record (code, name, timezone, status): shown as a dash (open, U-07) |
+| Items, stock value, SKU rule | Per-site figures | Stock needs Inventory Core (unit 9); numbering schemes come with the catalogue (unit 8): shown as a dash until then |
+| Users per site | "Users: 4 · Type 3 ×3 · Type 2 ×1" | Invited and active users with a role assigned at that site, by user type, read for people who may list users |
+| Subtitle and callout | "initial deployment: one warehouse live, three staged"; "Remaining locations go live within 6 months (Assumptions)" | The subtitle counts the live and staged sites; the callout describes the sample rollout and is shown with sample data only |
+| Location selector (shell) | Sites to choose from | The active sites the person works at (`/ui/v1/me`); staged and inactive sites are not offered; the home site is preselected when it is one of them |
+
 **F22 and F36 on the LLD's permission model.**
 
 | Point | Frames | Built |
@@ -407,7 +422,7 @@ Resolved by the product owner's authority rule (17 November 2026, top of this do
 | F36 editing | Every box tickable | The Super Admin column is fixed; reserved permissions cannot be ticked for other roles; a permission you do not hold at every site cannot be added (no self-escalation, LLD 7). Core refuses all three again. After saving, a panel lists each changed role and who it now applies to (the LLD's effective-permission preview) |
 | F36 "How privileges work" | "assigned a type · effective privileges are that type's set"; guard "One super-admin type" | "assigned one or more roles, at every site or at one · effective privileges are their union"; guard "One super admin: exactly one person, always … changed only by transfer" (LLD 7) |
 | F22 summary | Capability rows with Yes / No per type | The drawn capability rows, each read as the LLD permissions listed in its "Applies to" cell; "Yes" when a type holds all of them, "Partly" when some, from the live matrix |
-| F22 list | Location codes, "last active", Active / Inactive | Site scope shows "All locations" or a site count until the organisation module provides site codes (unit 4); last active is the latest sign-in or session refresh; statuses Active, Invited, Inactive (suspended or deactivated) |
+| F22 list | Location codes, "last active", Active / Inactive | Site scope shows "All locations" or the codes of the sites the person's roles are assigned at; last active is the latest sign-in or session refresh; statuses Active, Invited, Inactive (suspended or deactivated) |
 | F22 "+ Add user", "Invite user", "Edit" | Buttons | Core has the endpoints (`POST /ui/v1/users`, `PATCH /ui/v1/users/{id}`) but no form is drawn; the buttons say so (open, U-06) |
 
 **Workflow and catalogue** (open; unchanged).
@@ -425,12 +440,12 @@ Resolved by the product owner's authority rule (17 November 2026, top of this do
 
 ## 11. Results
 
-Latest run, 17 November 2026:
+Latest run, 19 November 2026:
 
 | Suite | Result |
 |---|---|
-| Browser tests (`npm run test:e2e`, production builds of both apps; tenant app on sample data and signed in to the real Core) | 117 passed (15 against the real Core) |
-| Python suite including the TypeScript-contract and UI checks (`uv run pytest`) | 266 passed |
+| Browser tests (`npm run test:e2e`, production builds of both apps; tenant app on sample data and signed in to the real Core) | 119 passed (16 against the real Core) |
+| Python suite including the TypeScript-contract and UI checks (`uv run pytest`) | 279 passed |
 | `npm run typecheck`, `npm run lint` | Clean |
 
 Problems the browser tests found and the fixes:

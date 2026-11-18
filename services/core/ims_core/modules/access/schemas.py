@@ -47,8 +47,9 @@ class MeLicence(BaseModel):
 class MeResponse(BaseModel):
     """GET /ui/v1/me: effective permissions per site and the licence state (LLD 7, 15).
 
-    ``sites`` and ``home_site_id`` come from the organisation module (unit 4); until it exists
-    they are empty. ``unread_notifications`` is null until notifications exist (unit 10)."""
+    ``sites`` are the active sites the person works at (every active site when an assignment
+    covers all sites); ``home_site_id`` is from their profile. ``unread_notifications`` is null
+    until notifications exist (unit 10)."""
 
     principal: MePrincipal
     user_type_no: int | None
@@ -96,6 +97,8 @@ class UserOut(BaseModel):
     login_identifier: str
     display_name: str
     email: str | None
+    department_id: UUID | None
+    home_site_id: UUID | None
     status: Literal["invited", "active", "suspended", "deactivated"]
     mfa_enrolled: bool
     locked: bool
@@ -117,6 +120,8 @@ class CreateUser(_Body):
     login_identifier: str = Field(min_length=1, max_length=320)
     display_name: str = Field(min_length=1, max_length=200)
     email: str | None = Field(default=None, max_length=320)
+    department_id: UUID | None = None
+    home_site_id: UUID | None = None
     assignments: list[AssignmentIn] = Field(default_factory=list, max_length=50)
     reason: str | None = Reason
 
@@ -130,8 +135,12 @@ class CreatedUserOut(BaseModel):
 
 
 class UpdateUser(_Body):
+    """The full editable profile: an omitted department or home site clears it."""
+
     display_name: str = Field(min_length=1, max_length=200)
     email: str | None = Field(default=None, max_length=320)
+    department_id: UUID | None = None
+    home_site_id: UUID | None = None
 
 
 # ---------------------------------------------------------------------------------- roles

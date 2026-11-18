@@ -51,13 +51,26 @@ PORT = 8180
 STATE = ROOT / ".local" / "e2e"
 PEOPLE_FILE = ROOT / "e2e" / ".auth" / "people.json"
 PASSWORD = "e2e correct horse battery"  # noqa: S105 - test value, written to the git-ignored people file
-SITE_BLR = "018f6f2a-0000-7000-8000-0000000000b1"
+#: The demo customer's sites (codes and names as F21 draws them), created through POST /ui/v1/sites.
+SITES: list[tuple[str, str, str]] = [
+    ("WH-BLR-01", "Bengaluru Central Warehouse", "active"),
+    ("WH-PUN-02", "Pune Plant Store", "staged"),
+    ("ST-MAA-01", "Chennai Retail Store", "staged"),
+    ("WH-HYD-03", "Hyderabad Depot", "staged"),
+]
+DEPARTMENTS: list[tuple[str, str]] = [("STORES", "Stores"), ("MAINT", "Maintenance")]
 
-#: persona -> (identifier, display name, seeded role assignments)
-PEOPLE: dict[str, tuple[str, str, list[tuple[str, str | None]]]] = {
-    "type2": ("priya.sharma@demo.test", "Priya Sharma", [("user_type_2", None)]),
-    "type3": ("suresh.patil@demo.test", "Suresh Patil", [("user_type_3", SITE_BLR)]),
-    "type4": ("meera.joshi@demo.test", "Meera Joshi", [("user_type_4", SITE_BLR)]),
+#: persona -> (identifier, display name, seeded role assignments by site code, home site, department)
+PEOPLE: dict[str, tuple[str, str, list[tuple[str, str | None]], str | None, str | None]] = {
+    "type2": ("priya.sharma@demo.test", "Priya Sharma", [("user_type_2", None)], "WH-BLR-01", None),
+    "type3": (
+        "suresh.patil@demo.test",
+        "Suresh Patil",
+        [("user_type_3", "WH-BLR-01")],
+        "WH-BLR-01",
+        "STORES",
+    ),
+    "type4": ("meera.joshi@demo.test", "Meera Joshi", [("user_type_4", "WH-BLR-01")], "WH-BLR-01", "MAINT"),
 }
 SUPER_ADMIN = ("arjun.mehta@demo.test", "Arjun Mehta")
 
@@ -160,7 +173,31 @@ async def main() -> None:
         people["type1"] = admin
         headers = {"Authorization": f"Bearer {admin['token']}"}
         roles = {r["code"]: r["id"] for r in (await client.get("/ui/v1/roles", headers=headers)).json()}
-        for persona, (identifier, name, assignments) in PEOPLE.items():
+        sites: dict[str, str] = {}
+        for code, name, status in SITES:
+            created_site = await client.post(
+                "/ui/v1/sites",
+                headers={**headers, "Idempotency-Key": f"e2e-site-{code}"},
+                json={
+                    "code": code,
+                    "name": name,
+                    "timezone": "Asia/Kolkata",
+                    "status": status,
+                    "default_location": {"code": f"{code}-MAIN", "name": f"{name} — main store"},
+                },
+            )
+            if created_site.status_code != 201:
+                raise RuntimeError(f"creating site {code}: {created_site.status_code} {created_site.text}")
+            sites[code] = created_site.json()["site"]["id"]
+        departments: dict[str, str] = {}
+        for code, name in DEPARTMENTS:
+            created_department = await client.post(
+                "/ui/v1/departments",
+                headers={**headers, "Idempotency-Key": f"e2e-department-{code}"},
+                json={"code": code, "name": name},
+            )
+            departments[code] = created_department.json()["id"]
+        for persona, (identifier, name, assignments, home, department) in PEOPLE.items():
             response = await client.post(
                 "/ui/v1/users",
                 headers={**headers, "Idempotency-Key": f"e2e-{persona}"},
@@ -168,7 +205,12 @@ async def main() -> None:
                     "login_identifier": identifier,
                     "display_name": name,
                     "email": identifier,
-                    "assignments": [{"role_id": roles[code], "site_id": site} for code, site in assignments],
+                    "home_site_id": sites[home] if home else None,
+                    "department_id": departments[department] if department else None,
+                    "assignments": [
+                        {"role_id": roles[code], "site_id": sites[site] if site else None}
+                        for code, site in assignments
+                    ],
                 },
             )
             if response.status_code != 201:

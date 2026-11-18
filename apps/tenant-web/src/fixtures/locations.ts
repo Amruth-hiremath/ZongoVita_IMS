@@ -1,7 +1,7 @@
 /** FIXTURE: sample rows from wireframe F21. Temporary; see src/data/source.ts. */
-import type { LocationList } from "@/data/locations";
+import type { LocationRow } from "@/data/locations";
 
-export const locationList: LocationList = {
+export const locationList: { rows: LocationRow[] } = {
   rows: [
     {
       id: "018f6f2a-0000-7000-8000-0000000000b1",

@@ -51,6 +51,15 @@ class Tenant:
     customer: Customer
     super_admin: Person | None = None
     roles: dict[str, dict[str, Any]] = field(default_factory=dict)
+    sites: dict[str, UUID] = field(default_factory=dict)
+
+    @property
+    def site_a(self) -> UUID:
+        return self.sites["A"]
+
+    @property
+    def site_b(self) -> UUID:
+        return self.sites["B"]
 
     # ------------------------------------------------------------------------------- HTTP
     async def call(
@@ -143,6 +152,25 @@ class Tenant:
 
     def role_id(self, code: str) -> str:
         return self.roles[code]["id"]
+
+    async def create_site(self, key: str, *, status: str = "active", timezone: str = "Asia/Kolkata") -> UUID:
+        """A site with its default location, created by the super admin through POST /ui/v1/sites."""
+        assert self.super_admin is not None
+        code = f"{self.customer.code}-{key}".upper()
+        response = await self.post(
+            "/ui/v1/sites",
+            self.super_admin,
+            {
+                "code": code,
+                "name": f"Site {key}",
+                "timezone": timezone,
+                "status": status,
+                "default_location": {"code": f"{code}-MAIN", "name": f"Site {key} main store"},
+            },
+        )
+        assert response.status_code == 201, response.text
+        self.sites[key] = UUID(response.json()["site"]["id"])
+        return self.sites[key]
 
     async def create_person(
         self,

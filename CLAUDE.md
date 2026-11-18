@@ -28,6 +28,7 @@ The `.docx` files are not directly readable. Extract them to text (zip + `word/d
 - Every sign-in path does exactly one Argon2id verification and fails with the same generic answer (LD-80); tests count verifications. Argon2id never runs inside a database transaction.
 - The login pepper never leaves the Platform Service; products resolve identifiers by the separate lookup hash (D-13).
 - Exactly one super admin, reserved permissions only with Super Admin, Super Admin role not editable, assignments revoke-only: enforced in the database (migration 0003), not only in services. Every role, permission or assignment change bumps `iam.access_version` by trigger (permission caches depend on it).
+- Licence limits (AD-27): users and sites are counted under a transaction-level advisory lock at creation or activation (`iam.licensed_users`, `org.licensed_sites`). Exactly one default location per site, defined site transitions and fixed codes are enforced in the database (migration 0004). Valid timezones are whatever PostgreSQL knows (F-05).
 - A route's `Permission(code)` must be in `ims_contracts.permissions.CATALOGUE`; the TypeScript mirror (`packages/api-client/src/permissions.ts`) must stay equal (static test). Site-scoped checks use the loaded record's site through `uow.grants`, never a request parameter.
 - The web app never gives page JavaScript a token: tokens live in HttpOnly cookies handled by `/bff` route handlers and the proxy; the BFF catch-all never forwards `auth/*`; writes need `X-IMS-CSRF` and a matching `Origin`.
 
