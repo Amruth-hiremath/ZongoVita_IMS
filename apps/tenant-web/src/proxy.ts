@@ -1,15 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { PATH_HEADER, sessionSource } from "@/session/config";
-import {
-  ACCESS_COOKIE,
-  accessCookie,
-  REFRESH_COOKIE,
-  REFRESH_MARGIN_SECONDS,
-  refreshCookie,
-  refreshOnce,
-  secondsLeft,
-} from "@/session/tokens";
+import { renewBeforeRender } from "@ims/web-session";
+
+import { tenantBff } from "@/bff/config";
+import { PATH_HEADER } from "@/session/config";
 
 function contentSecurityPolicy(nonce: string, isDev: boolean): string {
   return [
@@ -47,35 +41,15 @@ export async function proxy(request: NextRequest) {
   requestHeaders.set("Content-Security-Policy", policy);
   requestHeaders.set(PATH_HEADER, request.nextUrl.pathname);
 
-  let refreshed: Awaited<ReturnType<typeof refreshOnce>> = null;
-  let signedOut = false;
-  const isPage = !request.nextUrl.pathname.startsWith("/bff/");
-  if (isPage && sessionSource() === "core") {
-    const access = request.cookies.get(ACCESS_COOKIE)?.value;
-    const refresh = request.cookies.get(REFRESH_COOKIE)?.value;
-    if (refresh && (!access || secondsLeft(access) < REFRESH_MARGIN_SECONDS)) {
-      refreshed = await refreshOnce(refresh);
-      if (refreshed) {
-        request.cookies.set(ACCESS_COOKIE, refreshed.access_token);
-        request.cookies.set(REFRESH_COOKIE, refreshed.refresh_token);
-      } else {
-        request.cookies.delete(ACCESS_COOKIE);
-        request.cookies.delete(REFRESH_COOKIE);
-        signedOut = true;
-      }
-      requestHeaders.set("cookie", request.cookies.toString());
-    }
-  }
+  // Pages only: BFF routes refresh on their own.
+  const renewal = request.nextUrl.pathname.startsWith("/bff/")
+    ? null
+    : await renewBeforeRender(request, tenantBff);
+  if (renewal?.cookieHeader) requestHeaders.set("cookie", renewal.cookieHeader);
 
   const response = NextResponse.next({ request: { headers: requestHeaders } });
   response.headers.set("Content-Security-Policy", policy);
-  if (refreshed) {
-    response.cookies.set(...accessCookie(refreshed));
-    response.cookies.set(...refreshCookie(refreshed));
-  } else if (signedOut) {
-    response.cookies.delete(ACCESS_COOKIE);
-    response.cookies.delete(REFRESH_COOKIE);
-  }
+  renewal?.apply(response);
   return response;
 }
 

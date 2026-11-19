@@ -1,7 +1,7 @@
 [project]
 name = "ims-platform"
 version = "0.1.0"
-description = "ZongoVita Platform Service: Licence Registry, licence state machine, Login Directory, snapshot bundles"
+description = "ZongoVita Platform Service: Licence Registry, licence state machine, Login Directory, snapshot bundles, provisioning, platform administration"
 requires-python = ">=3.13"
 dependencies = [
     "ims-contracts",
@@ -13,7 +13,11 @@ dependencies = [
     "sqlalchemy[asyncio]>=2.0.36",
     "psycopg[binary]>=3.2",
     "alembic>=1.14",
+    "httpx>=0.27",
 ]
+
+[project.scripts]
+ims-platform-admin = "ims_platform.cli:main"
 
 [build-system]
 requires = ["hatchling"]

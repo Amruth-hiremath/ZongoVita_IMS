@@ -1,8 +1,8 @@
 /**
  * FIXTURE: the ZongoVita platform administrator the wireframes F51 to F53 are drawn for.
  *
- * Temporary. The Platform Console signs staff in against the Platform Service with mandatory MFA
- * (LLD 6.2, 15) and reads /platform/v1 through its own BFF; none of that exists yet.
+ * Used only in `fixtures` mode (IMS_CONSOLE_SESSION_SOURCE=fixtures). Signed in to the Platform
+ * Service, the session is GET /platform/v1/me (src/session/server.ts).
  */
 export const staff = {
   name: "Kiran Desai",

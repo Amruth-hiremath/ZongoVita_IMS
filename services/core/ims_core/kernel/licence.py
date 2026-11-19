@@ -55,6 +55,8 @@ class CustomerUnknownError(Exception):
 class RegistryClient(Protocol):
     async def fetch_snapshot(self, customer_id: UUID) -> LicenceSnapshot: ...
 
+    async def fetch_provisioning_snapshot(self, customer_id: UUID) -> LicenceSnapshot: ...
+
     async def fetch_changes(self, after_seq: int | None) -> ChangesResponse: ...
 
 
@@ -80,6 +82,17 @@ class HttpRegistryClient:
             if response.status_code in (200, 404):
                 return response
         raise RegistryUnavailableError(path)
+
+    async def fetch_provisioning_snapshot(self, customer_id: UUID) -> LicenceSnapshot:
+        """Only while the customer's provisioning run is creating its super admin (LLD 6.6
+        step 6, before activation). Never cached: it is used for that one step."""
+        response = await self._get(f"/internal/v1/customers/{customer_id}/provisioning-snapshot")
+        if response.status_code == 404:
+            raise CustomerUnknownError(str(customer_id))
+        try:
+            return LicenceSnapshot.model_validate(response.json())
+        except ValueError as exc:
+            raise RegistryUnavailableError("snapshot does not match the contract") from exc
 
     async def fetch_snapshot(self, customer_id: UUID) -> LicenceSnapshot:
         response = await self._get(f"/internal/v1/customers/{customer_id}/snapshot")

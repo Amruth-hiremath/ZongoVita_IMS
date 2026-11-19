@@ -24,6 +24,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 from uuid import UUID
 
+from ims_common.identifiers import InvalidIdentifierError, normalise_login_identifier
 from ims_common.ids import uuid7
 from ims_common.problem import DomainError
 from ims_contracts.enums import PrincipalType
@@ -806,6 +807,36 @@ class AccessService:
             activation_code=created.activation_code,
             activation_expires_at=created.activation_expires_at,
         )
+
+    async def provision_super_admin(
+        self, uow: UnitOfWork, *, login_identifier: str, display_name: str, email: str | None
+    ) -> CreatedUser:
+        """Provisioning step 6 (LLD 6.6), safe to repeat: the first call creates the super admin
+        (Super Admin and User Type 1, as ``bootstrap_super_admin``); a repeat for the same person
+        who has not activated yet issues a fresh activation code instead. A different person, or
+        a super admin who has already activated, is refused: the step has nothing left to do."""
+        holder = await repository.current_super_admin(uow.db)
+        if holder is None:
+            created = await self.bootstrap_super_admin(
+                uow, login_identifier=login_identifier, display_name=display_name, email=email
+            )
+            return CreatedUser(
+                user_id=created.user.profile.id,
+                activation_code=created.activation_code,
+                activation_expires_at=created.activation_expires_at,
+            )
+        profile = await read_profile(uow.db, holder.principal_id)
+        try:
+            wanted = normalise_login_identifier(login_identifier)
+        except InvalidIdentifierError as exc:
+            raise _invalid("login_identifier", str(exc)) from None
+        if profile is None or profile.login_identifier != wanted:
+            raise DomainError(
+                ErrorCode.INVALID_STATE_TRANSITION, "the customer already has a different super admin"
+            )
+        if profile.status != "invited":
+            raise DomainError(ErrorCode.INVALID_STATE_TRANSITION, "the super admin has already activated")
+        return await self._identity.reissue_activation_code(uow, profile.id)
 
     # ---------------------------------------------------------------------------- API clients
     async def _client_views(

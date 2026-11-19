@@ -12,7 +12,7 @@ from sqlalchemy import text
 from ims_common.logging import configure_logging
 from ims_common.pg import use_selector_event_loop_on_windows
 from ims_common.problem import install_problem_handlers
-from ims_platform import api_internal
+from ims_platform import api_internal, api_platform
 from ims_platform.runtime import PlatformRuntime, build_runtime
 from ims_platform.settings import PlatformSettings
 
@@ -57,6 +57,7 @@ def create_app(
         app.state.runtime = runtime
     install_problem_handlers(app)
     app.include_router(api_internal.router)
+    app.include_router(api_platform.router)
 
     @app.get("/healthz", include_in_schema=False)
     async def healthz() -> dict[str, str]:

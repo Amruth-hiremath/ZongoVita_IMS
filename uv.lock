@@ -476,6 +476,7 @@ version = "0.1.0"
 source = { editable = "packages/py-common" }
 dependencies = [
     { name = "alembic" },
+    { name = "argon2-cffi" },
     { name = "cryptography" },
     { name = "fastapi" },
     { name = "ims-contracts" },
@@ -488,6 +489,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "alembic", specifier = ">=1.14" },
+    { name = "argon2-cffi", specifier = ">=23.1" },
     { name = "cryptography", specifier = ">=44" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "ims-contracts", editable = "packages/py-contracts" },
@@ -573,6 +575,7 @@ source = { editable = "services/platform" }
 dependencies = [
     { name = "alembic" },
     { name = "fastapi" },
+    { name = "httpx" },
     { name = "ims-common" },
     { name = "ims-contracts" },
     { name = "psycopg", extra = ["binary"] },
@@ -586,6 +589,7 @@ dependencies = [
 requires-dist = [
     { name = "alembic", specifier = ">=1.14" },
     { name = "fastapi", specifier = ">=0.115" },
+    { name = "httpx", specifier = ">=0.27" },
     { name = "ims-common", editable = "packages/py-common" },
     { name = "ims-contracts", editable = "packages/py-contracts" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2" },

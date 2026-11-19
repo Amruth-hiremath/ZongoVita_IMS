@@ -21,6 +21,7 @@ import pytest_asyncio
 from fastapi import FastAPI
 from sqlalchemy import text
 
+from ims_common import auth_codes as domain
 from ims_common.clock import ManualClock
 from ims_contracts.enums import LicenceModule
 from ims_core.kernel.runtime import CoreRuntime
@@ -28,7 +29,7 @@ from ims_core.kernel.stages import PipelineStages
 from ims_core.kernel.tenant_settings import TenantSettings
 from ims_core.kernel.uow import unit_of_work
 from ims_core.main import create_app
-from ims_core.modules.identity import IdentityModule, domain
+from ims_core.modules.identity import IdentityModule
 from ims_core.modules.identity.public import CreatedUser, IdentityService, PrincipalStage
 from ims_platform.registry import Actor, RegistryService
 from ims_platform.runtime import PlatformRuntime

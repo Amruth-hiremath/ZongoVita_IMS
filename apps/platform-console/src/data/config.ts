@@ -22,7 +22,7 @@ export interface PlatformConfig {
 export function getPlatformConfig(): Promise<PlatformConfig> {
   return fromFixture(
     {
-      endpoint: "GET /platform/v1/licences",
+      endpoint: "GET /platform/v1/config (no such resource in LLD 6.8)",
       note: "Module flags, environment rails and the tenant override boundary have no /platform/v1 resource in LLD section 12; the frame's plan entitlement rails are not part of the design.",
     },
     platformConfig,

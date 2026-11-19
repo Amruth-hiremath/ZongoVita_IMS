@@ -27,9 +27,9 @@ class AccessModule:
 
     @property
     def routers(self) -> Sequence[APIRouter]:
-        from ims_core.modules.access import api_ui  # noqa: PLC0415
+        from ims_core.modules.access import api_internal, api_ui  # noqa: PLC0415
 
-        return (api_ui.router,)
+        return (api_ui.router, api_internal.router)
 
     def stages(self, principal: PrincipalStage) -> PipelineStages:
         from ims_core.kernel.stages import PipelineStages  # noqa: PLC0415

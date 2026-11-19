@@ -8,6 +8,8 @@ from urllib.parse import parse_qs, urlparse
 
 import pytest
 
+from ims_common import auth_codes as domain
+from ims_common.credentials import PasswordHasher, SecretBox
 from ims_common.identifiers import (
     InvalidIdentifierError,
     key_from_secret,
@@ -15,8 +17,6 @@ from ims_common.identifiers import (
     new_key_secret,
     normalise_login_identifier,
 )
-from ims_core.modules.identity import domain
-from ims_core.modules.identity.credentials import PasswordHasher, SecretBox
 
 RFC_SECRET = b"12345678901234567890"
 

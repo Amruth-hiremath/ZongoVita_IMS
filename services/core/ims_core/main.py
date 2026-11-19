@@ -18,8 +18,8 @@ from ims_core.kernel.settings import CoreSettings
 from ims_core.kernel.stages import PipelineStages
 
 if TYPE_CHECKING:
+    from ims_common.credentials import PasswordHasher
     from ims_core.modules.access.public import RateLimits
-    from ims_core.modules.identity.credentials import PasswordHasher
 
 
 class CoreModule(Protocol):

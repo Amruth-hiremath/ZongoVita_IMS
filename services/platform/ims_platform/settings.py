@@ -40,6 +40,30 @@ class PlatformSettings(BaseSettings):
     object_store_root: Path = Path(".local/objects")
 
     bundle_signing_key_ref: str = "platform/bundle-signing"
+
+    # Staff sign-in for the Platform Console (LLD 6.2 "Platform" tokens, AD-23).
+    token_signing_key_ref: str = "platform/token-signing"  # noqa: S105 - a reference
+    #: AES-GCM key ring sealing staff TOTP secrets and provisioning hand-over codes.
+    sealing_key_ref: str = "platform/sealing-keys"
+    password_time_cost: int = 3
+    password_memory_kib: int = 65536
+    password_parallelism: int = 4
+
+    # This service's own identity towards IMS Core (provisioning step 6, AD-64).
+    service_name: str = "ims-platform"
+    service_signing_key_ref: str = "services/ims-platform/signing"
+    core_base_url: str = "http://127.0.0.1:8080"
+    core_timeout_seconds: float = 30.0
+
+    # Provisioning runs (LLD 6.6). The database pipeline runs as its own process and identity;
+    # in ZongoVita cloud this is the CI/CD job trigger (U-04).
+    pipeline_command: list[str] = Field(default_factory=lambda: ["ims-db-pipeline"])
+    #: Where the pipeline process reads its secrets (IMS_PIPELINE_SECRETS_ROOT for that process).
+    pipeline_secrets_root: Path | None = None
+    shared_cluster_ref: str | None = None
+    dedicated_cluster_ref: str | None = None
+    provisioning_in_background: bool = True
+    provisioning_stale_minutes: int = 15
     # Login Directory keys (LD-10): the pepper never leaves the Platform Service; the lookup key is
     # shared with products so they can resolve identifiers from the snapshot bundle (AD-79).
     login_pepper_ref: str = "platform/login-pepper"

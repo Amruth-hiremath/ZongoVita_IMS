@@ -5,7 +5,8 @@
   "workspaces": [
     "apps/*",
     "packages/ui",
-    "packages/api-client"
+    "packages/api-client",
+    "packages/web-session"
   ],
   "scripts": {
     "dev:tenant": "npm run dev -w @ims/tenant-web",

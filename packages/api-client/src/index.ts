@@ -11,3 +11,18 @@ export {
   type PermissionCode,
 } from "./permissions";
 export { hasPermission, type Me } from "./session";
+export {
+  CUSTOMER_STATUSES,
+  PROVISIONING_STEPS,
+  STAFF_ROLES,
+  type CustomerStatus,
+  type Items,
+  type PlatformAuditEntry,
+  type PlatformCustomer,
+  type PlatformLicence,
+  type PlatformModule,
+  type PlatformStaffUser,
+  type ProvisioningStep,
+  type StaffMe,
+  type StaffRole,
+} from "./platform";

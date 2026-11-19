@@ -22,6 +22,7 @@ The `.docx` files are not directly readable. Extract them to text (zip + `word/d
 - `DatabaseRouter.transaction(ctx)` is the only way to a customer database, and `TenantContext` is built only in `ims_core/kernel` (static tests enforce both).
 - One transaction per command: change + audit + outbox event + idempotency key (AD-08). Services never commit.
 - Platform Service holds no customer-data or DDL credential (AD-13). DDL runs only in `pipelines/database`.
+- Provisioning (LLD 6.6) is a resumable run of repeatable steps; database work goes through the pipeline port and the super admin is created by Core. Core's `/internal/v1/provisioning/super-admin` trusts only the Platform Service's service token and only while that customer's run is at `initial_users`. Platform staff tokens (issuer `ims-platform`) and Core tokens are never accepted by the other side.
 - Audit, ledger and similar history are append-only by grant and by trigger. No hard deletes outside the LLD exception list (`ims_core/schema/access.py`).
 - No session state in SQL: no session `SET`, `LISTEN/NOTIFY`, session advisory locks, temp tables, prepared statements (LD-75).
 - Every tenant route goes through `ImsRouter` with `@declare(access=..., read_only_ok=...)`.
@@ -54,8 +55,8 @@ The `.docx` files are not directly readable. Extract them to text (zip + `word/d
 - Read `Docs/UI_Implementation.md` before touching `apps/` or `packages/ui`. The wireframes (`Docs/ZongoVita-IMS.zip`, SVG with outlined text) are the visual authority: render them to PNG in the scratchpad to read them.
 - Next.js 16: read the bundled docs in `node_modules/next/dist/docs/` rather than relying on memory (`proxy.ts`, async `params`, CSP nonces).
 - Wireframes decide look and labels; the HLD/LLD decide behaviour and permissions (product owner, 17 November 2026). Do not invent screens the wireframes lack (MFA, activation, user forms): leave a design-gap notice.
-- Session source: `IMS_SESSION_SOURCE=core` (default, Core through the BFF) or `fixtures` (sample personas). Which screens a person may open is `src/session/access.ts` (menu and guard).
-- No inline styles (strict CSP). Reads only via `src/data` functions that name their endpoint: `fromCore` once Core has it, `fromFixture` until then; unconnected data-changing buttons are `ActionButton` (`waitingFor="design"` when only the form is missing). Regenerate the dependency tables with `node tools/ui-dependencies.mjs --write` (a test checks them).
+- Session source: `IMS_SESSION_SOURCE=core` (default, Core through the BFF) or `fixtures` (sample personas); the console's is `IMS_CONSOLE_SESSION_SOURCE=platform` (default, Platform Service through its BFF) or `fixtures`. Which screens a person may open is `src/session/access.ts` (menu and guard). BFF logic lives in `packages/web-session`, shared by both apps.
+- No inline styles (strict CSP). Reads only via `src/data` functions that name their endpoint: `fromCore` (tenant) or `fromPlatform` (console) once the backend has it, `fromFixture` until then; unconnected data-changing buttons are `ActionButton` (`waitingFor="design"` when only the form is missing). Regenerate the dependency tables with `node tools/ui-dependencies.mjs --write` (a test checks them).
 - Commands: `npm run typecheck`, `npm run lint`, `npm run test:e2e`.
 
 ## User preferences

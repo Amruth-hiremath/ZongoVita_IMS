@@ -32,6 +32,9 @@ class CoreSettings(BaseSettings):
     token_signing_key_ref: str = "core/token-signing"  # noqa: S105 - a reference
     service_signing_key_ref: str = "services/ims-core/signing"
     bff_service_name: str = "tenant-web-bff"
+    #: The Platform Service, the only caller of the provisioning endpoint (LLD 6.6 step 6).
+    platform_service_name: str = "ims-platform"
+    platform_verify_key_ref: str = "services/ims-platform/verify"
     bff_verify_key_ref: str = "services/tenant-web-bff/verify"
 
     # Platform Service (Licence Registry). LLD section 16: 2 s timeout, two retries.

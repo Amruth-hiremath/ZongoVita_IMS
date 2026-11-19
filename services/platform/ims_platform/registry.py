@@ -31,6 +31,26 @@ from ims_contracts.errors import ErrorCode, FieldError
 from ims_contracts.licence import DatabaseLocation, LicenceSnapshot
 from ims_contracts.platform_api import ChangeFeedEntry, ChangesResponse, DirectoryBundleEntry
 
+#: The newest licence (draft during provisioning), the ready database, and a run that is at the
+#: super-admin step right now.
+_PROVISIONING_SNAPSHOT_SQL = """
+SELECT c.id AS customer_id, c.code AS customer_code, c.status AS customer_status,
+       l.valid_from, l.valid_until, l.grace_days, l.max_sites, l.max_users,
+       c.gxp_mode, c.gxp_locked, c.placement,
+       d.cluster_ref, d.pooler_endpoint, d.database_name, d.app_role, d.secret_ref,
+       d.schema_version, d.status AS database_status,
+       COALESCE((SELECT array_agg(m.module_code ORDER BY m.module_code)
+                   FROM platform.licence_modules m WHERE m.licence_id = l.id), '{}') AS modules,
+       (SELECT COALESCE(max(f.seq), 0) FROM platform.change_feed f) AS feed_seq
+  FROM platform.customers c
+  JOIN LATERAL (SELECT * FROM platform.licences x WHERE x.customer_id = c.id
+                 ORDER BY x.created_at DESC LIMIT 1) l ON true
+  JOIN platform.customer_databases d ON d.customer_id = c.id
+  JOIN platform.provisioning_runs r ON r.customer_id = c.id
+ WHERE c.id = :id AND c.status = 'provisioning' AND d.status = 'ready'
+   AND r.current_step = 'initial_users' AND r.status = 'running'
+"""
+
 MAX_CHANGES_PAGE = 500
 
 
@@ -623,6 +643,17 @@ class RegistryService:
                 (await conn.execute(text(_SNAPSHOT_SQL + " AND c.id = :id"), {"id": customer_id}))
                 .mappings()
                 .first()
+            )
+        return self._to_snapshot(row, self._clock.now()) if row else None
+
+    async def get_provisioning_snapshot(self, customer_id: UUID) -> LicenceSnapshot | None:
+        """Snapshot of a customer that is still provisioning, available only while its run is
+        at the super-admin step (LLD 6.6 step 6 comes before activation, step 7). It lets Core
+        reach the new database for exactly that step; afterwards, as before it, the customer
+        has no snapshot until activated."""
+        async with self._engine.connect() as conn:
+            row = (
+                (await conn.execute(text(_PROVISIONING_SNAPSHOT_SQL), {"id": customer_id})).mappings().first()
             )
         return self._to_snapshot(row, self._clock.now()) if row else None
 

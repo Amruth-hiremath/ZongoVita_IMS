@@ -8,8 +8,8 @@ from typing import TYPE_CHECKING
 from fastapi import APIRouter, FastAPI
 
 if TYPE_CHECKING:
+    from ims_common.credentials import PasswordHasher
     from ims_core.kernel.runtime import CoreRuntime
-    from ims_core.modules.identity.credentials import PasswordHasher
 
 
 class IdentityModule:
@@ -25,7 +25,7 @@ class IdentityModule:
         return (api_ui.router, api_public.router)
 
     def attach(self, app: FastAPI, runtime: CoreRuntime) -> None:
-        from ims_core.modules.identity.credentials import PasswordHasher  # noqa: PLC0415
+        from ims_common.credentials import PasswordHasher  # noqa: PLC0415
         from ims_core.modules.identity.service import IdentityService  # noqa: PLC0415
 
         settings = runtime.settings

@@ -60,6 +60,7 @@ export const licencesPage: LicencesPage = {
     enterprise_code: "ENT-0009",
     company: "Deccan Polymers LLP",
     status_label: "Expiring 12 d · 08 Oct",
+    tone: "amber",
     valid_until: "08 Oct 2026",
     grace_until: "22 Oct 2026 · 14 d per contract · full access, banner to the super admin",
     after_grace: "read-only · records viewable · emergency issue only",

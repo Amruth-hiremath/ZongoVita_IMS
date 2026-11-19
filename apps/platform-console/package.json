@@ -12,6 +12,7 @@
   "dependencies": {
     "@ims/api-client": "*",
     "@ims/ui": "*",
+    "@ims/web-session": "*",
     "lucide-react": "^1.73.0",
     "next": "16.4.6",
     "react": "19.3.1",

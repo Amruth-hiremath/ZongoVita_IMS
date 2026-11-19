@@ -31,6 +31,7 @@ from ims_platform.registry import MAX_CHANGES_PAGE, Actor
 from ims_platform.runtime import PlatformRuntime
 
 CORE_AND_WORKER = frozenset({"ims-core", "ims-worker"})
+CORE_ONLY = frozenset({"ims-core"})
 
 
 def get_runtime(request: Request) -> PlatformRuntime:
@@ -70,6 +71,20 @@ async def get_snapshot(
     snapshot = await runtime.registry.get_snapshot(customer_id)
     if snapshot is None:
         raise DomainError(ErrorCode.NOT_FOUND, "customer is unknown or not licensed")
+    return snapshot
+
+
+@router.get("/customers/{customer_id}/provisioning-snapshot", response_model=LicenceSnapshot)
+async def get_provisioning_snapshot(
+    customer_id: UUID,
+    runtime: Annotated[PlatformRuntime, Depends(get_runtime)],
+    _caller: Annotated[ServiceCaller, Depends(require_service(CORE_ONLY))],
+) -> LicenceSnapshot:
+    """For IMS Core during provisioning step 6 only (LLD 6.6): the snapshot of a customer whose
+    run is creating its super admin. 404 at any other time."""
+    snapshot = await runtime.registry.get_provisioning_snapshot(customer_id)
+    if snapshot is None:
+        raise DomainError(ErrorCode.NOT_FOUND, "no provisioning run is creating this customer's super admin")
     return snapshot
 
 

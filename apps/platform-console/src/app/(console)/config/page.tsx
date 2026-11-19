@@ -13,6 +13,7 @@ import type { Metadata } from "next";
 
 import { ActionButton } from "@/components/action-button";
 import { getPlatformConfig } from "@/data/config";
+import { mayOpen } from "@/session/server";
 
 import { ModuleFlags } from "./module-flags";
 
@@ -31,6 +32,7 @@ const provisioning = [
  * (Docs/UI_Implementation.md section 10).
  */
 export default async function ConfigPage() {
+  if (!(await mayOpen("/config"))) return null;
   const page = await getPlatformConfig();
 
   return (
@@ -42,7 +44,7 @@ export default async function ConfigPage() {
             <ButtonLink href="/audit" className="bg-none bg-white">
               View change history → F54
             </ButtonLink>
-            <ActionButton endpoint="PATCH /platform/v1/config (no such resource in the LLD yet)" variant="primary">
+            <ActionButton endpoint="a platform configuration resource (none in LLD 6.8)" variant="primary">
               Save configuration
             </ActionButton>
           </>

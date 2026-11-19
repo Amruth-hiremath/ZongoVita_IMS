@@ -22,6 +22,7 @@ import { Fragment } from "react";
 
 import { ActionButton } from "@/components/action-button";
 import { getPlatformOverview } from "@/data/overview";
+import { mayOpen } from "@/session/server";
 
 export const metadata: Metadata = { title: "Platform Overview" };
 
@@ -35,6 +36,7 @@ const pipeline = [
 
 /** F51 Platform Overview. */
 export default async function OverviewPage() {
+  if (!(await mayOpen("/overview"))) return null;
   const page = await getPlatformOverview();
   const { enterprises, users, uptime, api_today: api } = page.kpis;
 
@@ -45,10 +47,10 @@ export default async function OverviewPage() {
         subtitle="ZongoVita cloud — every enterprise, license, user limit, database and API call at a glance (FB-20 · FB-22)"
         actions={
           <>
-            <ActionButton endpoint="GET /platform/v1/customers (usage report export)" className="w-[116px] bg-none bg-white">
+            <ActionButton endpoint="a usage report export (no /platform/v1 resource in the LLD)" className="w-[116px] bg-none bg-white">
               Usage report
             </ActionButton>
-            <ActionButton endpoint="POST /platform/v1/customers" variant="primary" className="w-[167px]">
+            <ActionButton endpoint="POST /platform/v1/provisioning-runs" waitingFor="design" variant="primary" className="w-[167px]">
               + Onboard enterprise
             </ActionButton>
           </>
@@ -63,15 +65,25 @@ export default async function OverviewPage() {
         />
         <StatCard
           label="Licensed users in use"
-          value={`${users.used} / ${users.licensed}`}
-          badge={<Pill tone="blue">{users.utilisation_percent}% utilisation</Pill>}
+          value={`${users.used ?? "—"} / ${users.licensed}`}
+          badge={
+            users.utilisation_percent === null ? (
+              <Pill tone="gray">usage not reported</Pill>
+            ) : (
+              <Pill tone="blue">{users.utilisation_percent}% utilisation</Pill>
+            )
+          }
         />
         <StatCard
           label="Platform uptime"
-          value={`${uptime.percent}%`}
-          hint={`${uptime.window} · SLA ${uptime.sla_percent}%`}
+          value={uptime ? `${uptime.percent}%` : "—"}
+          hint={uptime ? `${uptime.window} · SLA ${uptime.sla_percent}%` : "not reported"}
         />
-        <StatCard label="API calls · today" value={api.calls} hint={`p95 ${api.p95_ms} ms · ${api.failures} failures`} />
+        <StatCard
+          label="API calls · today"
+          value={api ? api.calls : "—"}
+          hint={api ? `p95 ${api.p95_ms} ms · ${api.failures} failures` : "not reported"}
+        />
       </div>
 
       <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_412px]">
@@ -95,13 +107,13 @@ export default async function OverviewPage() {
                   <TD className="whitespace-nowrap text-gray-700">{row.company}</TD>
                   <TD className="whitespace-nowrap text-[12.5px] text-gray-700">{row.database}</TD>
                   <TD muted align="center" numeric className="whitespace-nowrap">
-                    {row.users_used} / {row.users_licensed}
+                    {row.users_used ?? "—"} / {row.users_licensed ?? "—"}
                   </TD>
                   <TD muted align="right" numeric className="whitespace-nowrap">
                     {row.api_calls_7d ?? "—"}
                   </TD>
                   <TD muted className="whitespace-nowrap">
-                    {row.last_activity_label}
+                    {row.last_activity_label ?? "—"}
                   </TD>
                 </TR>
               ))}

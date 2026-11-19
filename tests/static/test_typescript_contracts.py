@@ -111,3 +111,15 @@ def test_ui_dependency_tables_are_current() -> None:
         [node, "tools/ui-dependencies.mjs", "--check"], cwd=root, capture_output=True, text=True, check=False
     )
     assert result.returncode == 0, result.stderr or result.stdout
+
+
+def test_platform_enumerations_match() -> None:
+    """The Platform Console reads /platform/v1 with the Platform Service's own vocabulary."""
+    from ims_contracts.enums import CustomerStatus  # noqa: PLC0415
+    from ims_platform.accounts import StaffRole  # noqa: PLC0415
+    from ims_platform.provisioning import STEPS  # noqa: PLC0415
+
+    source = (API_CLIENT / "platform.ts").read_text(encoding="utf-8")
+    assert _string_array(source, "STAFF_ROLES") == [role.value for role in StaffRole]
+    assert _string_array(source, "CUSTOMER_STATUSES") == [status.value for status in CustomerStatus]
+    assert _string_array(source, "PROVISIONING_STEPS") == [*STEPS, "done"]

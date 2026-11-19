@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 
 const config: NextConfig = {
   // Shared packages ship TypeScript source; Next compiles them with the app.
-  transpilePackages: ["@ims/ui", "@ims/api-client"],
+  transpilePackages: ["@ims/ui", "@ims/api-client", "@ims/web-session"],
   reactStrictMode: true,
   poweredByHeader: false,
   // Static security headers. The Content-Security-Policy carries a per-request nonce and is set

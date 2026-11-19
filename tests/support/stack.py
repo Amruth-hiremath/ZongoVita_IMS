@@ -16,6 +16,7 @@ from uuid import UUID
 from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 
+from ims_common.credentials import SecretBox
 from ims_common.identifiers import new_key_secret
 from ims_common.objectstore import FileObjectStore
 from ims_common.pg import create_pooler_engine
@@ -23,7 +24,6 @@ from ims_common.secrets import FileSecretsStore
 from ims_common.tokens import KeySet
 from ims_contracts.enums import DatabaseStatus, LicenceModule, Placement
 from ims_core.kernel.runtime import CORE_READABLE_SECRETS
-from ims_core.modules.identity.credentials import SecretBox
 from ims_db_pipeline.cluster import ClusterAdmin, cluster_admin_ref
 from ims_db_pipeline.migrate import migrate_control_plane, migrate_customer_database
 from ims_db_pipeline.provision import CustomerDatabase, provision_control_plane, provision_customer_database
@@ -47,7 +47,7 @@ SETUP_ACTOR = Actor("system:test-setup")
 ALL_MODULES = frozenset(m.value for m in LicenceModule)
 
 #: Services whose signing keys exist in the test secrets store.
-SERVICES = ("ims-core", "ims-worker", "tenant-web-bff")
+SERVICES = ("ims-core", "ims-worker", "tenant-web-bff", "ims-platform")
 
 
 @dataclass
@@ -176,6 +176,8 @@ async def bootstrap(root: Path) -> Stack:
     await put("platform/login-pepper", new_key_secret())
     await put("shared/directory-lookup-key", new_key_secret())
     await put("core/mfa-encryption", SecretBox.new_ring())
+    await put("platform/token-signing", KeySet.generate("platform-2026-11").to_secret())
+    await put("platform/sealing-keys", SecretBox.new_ring("platform-seal-1"))
     for service in SERVICES:
         keys = KeySet.generate(f"{service}-1")
         stack.service_keys[service] = keys

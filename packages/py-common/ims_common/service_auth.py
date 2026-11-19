@@ -7,8 +7,9 @@ exactly the callers it trusts.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import timedelta
+from typing import Any
 
 import jwt
 
@@ -37,10 +38,18 @@ class ServiceTokenIssuer:
         self._cache[audience] = (token, now + SERVICE_TOKEN_TTL.total_seconds() - _REFRESH_MARGIN_SECONDS)
         return token
 
+    def token_with(self, audience: str, claims: dict[str, Any]) -> str:
+        """A fresh token carrying ``claims`` (for example the customer a call is about), so the
+        receiver takes them from a verified signature rather than from the request (AD-21)."""
+        return self._codec.encode(
+            subject=self._service_name, audience=audience, ttl=SERVICE_TOKEN_TTL, claims=claims
+        )
+
 
 @dataclass(frozen=True)
 class ServiceCaller:
     name: str
+    claims: dict[str, Any] = field(default_factory=dict)
 
 
 class ServiceTokenVerifier:
@@ -63,4 +72,4 @@ class ServiceTokenVerifier:
         claims = codec.decode(token, audience=self._audience)
         if claims["sub"] != claimed:
             raise TokenError("invalid", "service token subject mismatch")
-        return ServiceCaller(name=claimed)
+        return ServiceCaller(name=claimed, claims=claims)

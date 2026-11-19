@@ -1,7 +1,8 @@
 // Lists what the web apps still need from the backend, straight from the code.
 //
-// Every read goes through fromFixture({ endpoint, note }, ...) or, once Core has the endpoint,
-// fromCore({ endpoint, note }, ...) in src/data; every action that would change data and is not
+// Every read goes through fromFixture({ endpoint, note }, ...) or, once the backend has the
+// endpoint, fromCore({ endpoint, note }, ...) (Tenant Web App) or fromPlatform({ endpoint, note }, ...)
+// (Platform Console) in src/data; every action that would change data and is not
 // connected is an <ActionButton endpoint="..."> (Docs/UI_Implementation.md, rule 4). This script
 // collects all three and prints the Markdown tables used in that document:
 //
@@ -14,8 +15,8 @@ import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const apps = [
-  { name: "Tenant Web App", dir: "apps/tenant-web/src" },
-  { name: "Platform Console", dir: "apps/platform-console/src" },
+  { name: "Tenant Web App", dir: "apps/tenant-web/src", backend: "IMS Core" },
+  { name: "Platform Console", dir: "apps/platform-console/src", backend: "the Platform Service" },
 ];
 const DOC = join(root, "Docs", "UI_Implementation.md");
 const BEGIN = "<!-- generated: ui-dependencies begin -->";
@@ -58,7 +59,7 @@ function collect(app) {
       for (const match of source.matchAll(pattern)) {
         reads.push({ endpoint: literal(match[1]), note: match[2] ? literal(match[2]) : "", file: where });
       }
-      const live = /fromCore(?:<[^(]*>)?\(\s*\{\s*endpoint:\s*([\s\S]*?)(?:,\s*note:\s*([\s\S]*?))?,?\s*\}\s*,/g;
+      const live = /from(?:Core|Platform)(?:<[^(]*>)?\(\s*\{\s*endpoint:\s*([\s\S]*?)(?:,\s*note:\s*([\s\S]*?))?,?\s*\}\s*,/g;
       for (const match of source.matchAll(live)) {
         connected.push({ endpoint: literal(match[1]), note: match[2] ? literal(match[2]) : "", file: where });
       }
@@ -84,7 +85,7 @@ function render() {
     const { reads, connected, actions } = collect(app);
     lines.push(`### ${app.name}`, "");
     if (connected.length) {
-      lines.push(`Reads connected to IMS Core (${connected.length}):`, "");
+      lines.push(`Reads connected to ${app.backend} (${connected.length}):`, "");
       lines.push("| Endpoint | Data function file | Notes |", "|---|---|---|");
       for (const read of connected) lines.push(`| \`${cell(read.endpoint)}\` | \`${read.file}\` | ${cell(read.note)} |`);
       lines.push("");

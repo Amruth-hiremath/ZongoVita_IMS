@@ -85,7 +85,15 @@ docker compose -p ims-local -f deploy/local/docker-compose.yml up -d --build --w
 
 ## Web apps
 
-The Tenant Web App signs in to IMS Core through its BFF (`IMS_SESSION_SOURCE=core`, the default; `IMS_CORE_URL` points at Core). Screens whose Core module does not exist yet show the wireframes' sample data. To view every screen with the sample personas instead, set `IMS_SESSION_SOURCE=fixtures`. The Platform Console shows sample data throughout.
+The Tenant Web App signs in to IMS Core through its BFF (`IMS_SESSION_SOURCE=core`, the default; `IMS_CORE_URL` points at Core). Screens whose Core module does not exist yet show the wireframes' sample data. To view every screen with the sample personas instead, set `IMS_SESSION_SOURCE=fixtures`.
+
+The Platform Console signs ZongoVita staff in to the Platform Service through its own BFF (`IMS_CONSOLE_SESSION_SOURCE=platform`, the default; `IMS_PLATFORM_URL` points at the Platform Service, default `http://127.0.0.1:8081`). Overview and Licenses read the registry; Platform Config shows sample data. The console has no sign-in screen yet (no wireframe), so staff sign in through `/bff/auth/login` and `/bff/auth/mfa`, as the browser tests do. To view the screens on sample data instead, set `IMS_CONSOLE_SESSION_SOURCE=fixtures`.
+
+The first system admin is created on the Platform Service host; it prints a one-time activation code to hand over, and later staff accounts are created through `/platform/v1/users`:
+
+```bash
+uv run ims-platform-admin create-system-admin --identifier admin@zongovita.example --name "First Admin"
+```
 
 ```bash
 npm run dev:tenant
@@ -109,4 +117,4 @@ npm run lint
 npm run test:e2e
 ```
 
-The browser tests build both apps in production mode and serve the tenant app twice, on sample data (3200) and signed in to IMS Core (3201), and the console on 3300. For the second, `tools/e2e_backend.py` serves Core on 8180 against the test stack: it wipes and re-provisions that stack, so do not run the browser tests and `uv run pytest` at the same time. It creates a demo customer whose people sign in with real passwords and authenticator codes; their test credentials go to the git-ignored `e2e/.auth/`.
+The browser tests build both apps in production mode and serve the tenant app twice, on sample data (3200) and signed in to IMS Core (3201), and the console twice, on sample data (3300) and signed in to the Platform Service (3301). For the live ones, `tools/e2e_backend.py` serves Core on 8180 and the Platform Service on 8181 against the test stack: it wipes and re-provisions that stack, so do not run the browser tests and `uv run pytest` at the same time. It creates ZongoVita staff (a system admin and a support engineer) and onboards a demo customer through a real provisioning run; staff and customer people sign in with real passwords and authenticator codes, and their test credentials go to the git-ignored `e2e/.auth/`.

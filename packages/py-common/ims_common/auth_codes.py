@@ -1,6 +1,7 @@
-"""Pure identity rules: TOTP, password policy, one-time codes (LLD 6.2, section 16; LD-79).
+"""Pure credential rules: TOTP, password policy, one-time codes (LLD 6.2, section 16; LD-79).
 
-No I/O here: everything is a function of its arguments, so it is tested directly.
+Shared by Core's identity module (customer users) and the Platform Service (ZongoVita staff,
+AD-23: MFA mandatory). No I/O here: everything is a function of its arguments.
 """
 
 from __future__ import annotations

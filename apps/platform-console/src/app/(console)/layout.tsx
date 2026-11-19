@@ -1,41 +1,42 @@
-import { AppShell, type NavItem } from "@ims/ui";
+import { AppShell } from "@ims/ui";
+import { headers } from "next/headers";
 import type { ReactNode } from "react";
 
-import { getStaffSession } from "@/data/session";
+import { DataSourceBanner } from "@/components/data-source-banner";
+import { NotPermitted } from "@/components/not-permitted";
+import { getEnterpriseOptions } from "@/data/enterprises";
+import { canOpen, menuFor } from "@/session/access";
+import { PATH_HEADER } from "@/session/config";
+import { requireStaff } from "@/session/server";
 
-/** Sidebar of the Platform Console as drawn in F51 to F53. */
-const menu: NavItem[] = [
-  { label: "Overview", href: "/overview", icon: "dashboard" },
-  { label: "Enterprises", href: "/enterprises", icon: "vendors" },
-  { label: "Licenses", href: "/licenses", icon: "privileges" },
-  { label: "Platform Config", href: "/config", icon: "settings" },
-  { label: "Audit Trail", href: "/audit", icon: "audit" },
-];
-
+/**
+ * Frame for every console screen: menu, enterprise selector and user come from the staff session.
+ * A screen the person may not open is not rendered; the Platform Service refuses its endpoints
+ * in any case.
+ */
 export default async function ConsoleLayout({ children }: { children: ReactNode }) {
-  const staff = await getStaffSession();
+  const staff = await requireStaff();
+  const path = (await headers()).get(PATH_HEADER) ?? "/overview";
+  const enterprises = staff.role === "system_admin" ? await getEnterpriseOptions() : [];
+
   return (
     <AppShell
-      nav={menu}
+      nav={menuFor(staff.role)}
       footer={`Platform · ${staff.name}`}
-      user={{ name: staff.name, role: staff.role, initials: staff.initials }}
+      user={{ name: staff.name, role: staff.role_label, initials: staff.initials }}
       scope={{
         ariaLabel: "Enterprise",
         value: "all",
         options: [
           { value: "all", label: "All enterprises" },
-          ...staff.enterprises.map((enterprise) => ({ value: enterprise.code, label: `${enterprise.code} · ${enterprise.name}` })),
+          ...enterprises.map((enterprise) => ({ value: enterprise.code, label: `${enterprise.code} · ${enterprise.name}` })),
         ],
       }}
       notificationCount={staff.unread_notifications}
       homeHref="/overview"
-      banner={
-        <div className="flex h-6 items-center justify-center bg-gray-50 text-[10.5px] tracking-wide text-gray-500">
-          Sample data from the wireframes · screens are not connected to the Platform Service yet
-        </div>
-      }
+      banner={<DataSourceBanner source={staff.source} />}
     >
-      {children}
+      {canOpen(staff.role, path) ? children : <NotPermitted />}
     </AppShell>
   );
 }

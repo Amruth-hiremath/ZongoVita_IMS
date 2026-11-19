@@ -16,6 +16,7 @@ from uuid import UUID
 import httpx
 from fastapi import APIRouter, FastAPI
 
+from ims_common import auth_codes as domain
 from ims_common.clock import ManualClock
 from ims_common.ids import uuid7
 from ims_contracts.enums import LicenceModule
@@ -24,7 +25,6 @@ from ims_core.kernel.uow import unit_of_work
 from ims_core.main import build_app
 from ims_core.modules.access.public import RateLimits
 from ims_core.modules.access.service import AccessService
-from ims_core.modules.identity import domain
 from tests.support.stack import Customer
 
 PASSWORD = "correct horse battery staple"

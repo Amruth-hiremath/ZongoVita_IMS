@@ -21,7 +21,7 @@ export default defineConfig([
   },
   {
     // The only places allowed to read fixtures.
-    files: ["src/data/**/*.ts", "src/fixtures/**/*.ts"],
+    files: ["src/data/**/*.ts", "src/session/server.ts", "src/fixtures/**/*.ts"],
     rules: { "no-restricted-imports": "off" },
   },
 ]);

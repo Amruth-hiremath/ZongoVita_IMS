@@ -9,7 +9,8 @@ How the Next.js apps are built from the wireframes (`Docs/ZongoVita-IMS.zip`), w
 | Path | What |
 |---|---|
 | `packages/ui` (`@ims/ui`) | Design tokens and shared components. The only place colours, borders and type sizes are defined |
-| `packages/api-client` (`@ims/api-client`) | TypeScript side of the API contracts: error codes, licence state, permission catalogue, `/me` shape |
+| `packages/api-client` (`@ims/api-client`) | TypeScript side of the API contracts: error codes, licence state, permission catalogue, `/me` shape; the Platform Service's `/platform/v1` shapes (`platform.ts`) |
+| `packages/web-session` (`@ims/web-session`) | The backend-for-frontend shared by both apps (LD-49): HttpOnly token cookies, refresh once per process, CSRF and Origin checks, the sign-in handlers, the forwarding catch-all, renewal before render |
 | `apps/tenant-web` | Customer app (LLD: Tenant Web App). Frames F03 to F50, F60, F61 |
 | `apps/platform-console` | ZongoVita staff app, a separate deployment (AD-04). Frames F51 to F53 |
 
@@ -18,10 +19,10 @@ Inside each app:
 | Path | Rule |
 |---|---|
 | `src/app` | Routes. Pages are server components; a `"use client"` file sits beside a page only where the screen has interaction |
-| `src/data` | The data layer. Every read is a function here, and it names the Core endpoint it stands in for |
+| `src/data` | The data layer. Every read is a function here, and it names the endpoint (Core's or the Platform Service's) it reads or stands in for |
 | `src/fixtures` | Sample data transcribed from the wireframes. Nothing outside `src/data` (and `src/session/server.ts`) may import it; ESLint enforces this |
-| `src/session` | Who is signed in (`server.ts`), which workspace they see and their menu (`workspace.ts`), which screens they may open (`access.ts`), session cookies and token refresh (`tokens.ts`), reads from Core for server components (`core.ts`) |
-| `src/app/bff`, `src/bff` | The backend-for-frontend (LD-49): `/bff/auth/*` for the credential steps, `/bff/[...path]` forwarding to Core's `/ui/v1` |
+| `src/session` | Who is signed in (`server.ts`), which workspace they see and their menu (`workspace.ts`, tenant app), which screens they may open (`access.ts`), session cookie names and the refresher (`tokens.ts`), reads for server components (`core.ts` in the tenant app, `platform.ts` in the console) |
+| `src/app/bff`, `src/bff` | The backend-for-frontend (LD-49, `@ims/web-session`): `/bff/auth/*` for the credential steps, `/bff/[...path]` forwarding to Core's `/ui/v1` (tenant app) or the Platform Service's `/platform/v1` (console) |
 | `src/components` | App-level pieces shared by several routes |
 | `src/lib` | Formatting helpers |
 
@@ -132,6 +133,7 @@ Platform Console (`apps/platform-console`):
 | F51 | Platform Overview | `/overview` |
 | F52 | Licenses & Plans | `/licenses` |
 | F53 | Platform Config | `/config` |
+| — | Sign-in notice (no frame; `platform` mode only) | `/sign-in` |
 
 ## 6. Endpoint names
 
@@ -166,6 +168,15 @@ All 43 frames are built: 40 in the Tenant Web App and 3 in the Platform Console.
 | `core` (default) | IMS Core: the BFF keeps the access and refresh tokens in HttpOnly, Secure, SameSite=Lax cookies; the session is `GET /ui/v1/me` (name, role label, effective permissions per site, the person's active sites and home site, licence state); the proxy renews an expiring access token before a page renders | Shell, menu, location selector and screen guard from `/me`; F21 Locations, F22 Users and F36 Privilege Matrix live (`GET /ui/v1/sites`, `GET /ui/v1/users`, `GET /ui/v1/privilege-matrix`, `PUT /ui/v1/roles/{id}/permissions`); every other screen still shows sample data, and a strip above the top bar says so |
 | `fixtures` | A wireframe persona chosen on the sign-in card (an HttpOnly cookie, no credential) | Every screen on sample data, for viewing frames whose backend does not exist yet |
 
+**Platform Console session modes** (`IMS_CONSOLE_SESSION_SOURCE`, read at request time):
+
+| Mode | Session | Screens |
+|---|---|---|
+| `platform` (default) | The Platform Service: the console's BFF (`/bff/*` to `/platform/v1`, `IMS_PLATFORM_URL`) keeps the staff tokens in HttpOnly cookies of its own (`ims_pc_*`); the session is `GET /platform/v1/me`; MFA is required for all staff (LLD 15) | Menu and screen guard by staff role: the system admin opens every screen, a support engineer none (support access is unit 12). F51 live: customers by status, licensed users, each customer's database or provisioning step, the platform audit as activity. F52 live: the licence registry (validity, site and user limits, modules, database, derived licence state) and the licence nearest its end with its grace and read-only dates. Users and sites in use, API calls, last activity, uptime and health show as not reported (Implementation_Progress U-17). F53 stays on sample data (no `/platform/v1` resource). Without a session every screen leads to `/sign-in`, which says the console has no sign-in wireframe |
+| `fixtures` | The wireframes' sample administrator, no credential | Every screen on sample data |
+
+The console's "+ Onboard enterprise" and "Assign license" buttons say their forms are not designed: the Platform Service provides `POST /platform/v1/provisioning-runs` and `POST /platform/v1/customers/{id}/licences`, and the browser tests onboard a customer through the BFF.
+
 **Signing in** (`core` mode). F03 submits the work email and password to `POST /bff/auth/login`. Every sign-in then needs the authenticator step (LD-79): its screen, MFA enrolment, recovery-code entry and activation have no wireframes, so F03 reports "Password accepted" and states that the next screen has no approved design yet. The BFF endpoints for those steps exist and are exercised by the browser tests (`/bff/auth/mfa/enrol`, `/bff/auth/mfa`, `/bff/auth/activate`, `/bff/auth/logout`). Until the screens are designed, a person cannot finish signing in from the browser (Implementation_Progress U-06).
 
 **BFF rules** (LLD 15): writes need `X-IMS-CSRF: 1` and an `Origin` equal to the app's (`IMS_PUBLIC_ORIGIN` behind a rewriting proxy); each write carries an `Idempotency-Key` (the page's, or one the BFF generates); `TOKEN_EXPIRED` refreshes once and replays with the same key; credential routes are never forwarded by the catch-all, so no token reaches page JavaScript. A refresh token is exchanged once per server process however many requests carry it (LD-26 revokes a session on reuse).
@@ -182,12 +193,13 @@ All 43 frames are built: 40 in the Tenant Web App and 3 in the Platform Console.
 | Actions that need the backend say so and name the endpoint | `e2e/tenant-shell.spec.ts` | Passing |
 | Security headers: per-request nonce CSP, `frame-ancestors 'none'`, HSTS, `nosniff` | `e2e/tenant-shell.spec.ts` | Passing |
 | Screens outside a persona's permissions are not rendered; menus follow the LLD's seeded permissions | `e2e/tenant-shell.spec.ts` | Passing |
+| Signed in to the real Platform Service: F51 and F52 from the registry, the enterprise selector, platform activity from the audit, a customer onboarded through the console BFF and the real provisioning run with the handover shown once, CSRF and Origin refusals, HttpOnly tokens, no forwarding of sign-in routes, the support engineer's empty menu and the Platform Service's refusal, the sign-in notice without a session | `e2e/console.setup.ts` (staff sign-in through the BFF with real TOTP codes), `e2e/console-platform.spec.ts`, against `tools/e2e_backend.py` | Passing |
 | Signed in to the real IMS Core: F03 password step, shell and menu from `/ui/v1/me` per seeded type, screen guard plus Core's own refusal, F21 live sites with assigned users, F22 live users with site codes, the location selector per person, F36 save reaching another person's menu at once, BFF CSRF and Origin checks, token renewal before render | `e2e/core.setup.ts` (sign-in through the BFF with real TOTP codes), `e2e/core-access.spec.ts`, against `tools/e2e_backend.py` | Passing |
 | Visual match with the wireframes | Each screen captured at 1440 × 900 beside its frame and compared section by section | Layouts, labels, columns, pills and tones match. Remaining differences are listed in section 10 |
 | TypeScript contracts match the Python ones; sample data reached only through `src/data`; no inline styles | `tests/static/test_typescript_contracts.py` | Passing |
 | Types and lint | `npm run typecheck`, `npm run lint` | Clean |
 
-Commands (the Core-mode project starts `tools/e2e_backend.py`, which wipes and re-provisions the `ims-test` database stack, so do not run it alongside `uv run pytest`):
+Commands (the Core and Platform projects start `tools/e2e_backend.py`, which wipes and re-provisions the `ims-test` database stack and serves Core on 8180 and the Platform Service on 8181, so do not run it alongside `uv run pytest`):
 
 ```bash
 npm run test:e2e
@@ -201,7 +213,7 @@ The second saves one screenshot per frame into `.screens/` for side-by-side revi
 
 ## 9. What the screens need from the backend
 
-The tables below are generated from the code (`node tools/ui-dependencies.mjs --write`): every `fromCore` and `fromFixture` read and every `ActionButton` endpoint. The third column is the gap each screen found between what it shows and what the LLD's endpoint describes. Many screens show summary figures (dashboard tiles, KPI rows) for which the LLD has no summary resource; those notes say which data the summary needs.
+The tables below are generated from the code (`node tools/ui-dependencies.mjs --write`): every `fromCore`, `fromPlatform` and `fromFixture` read and every `ActionButton` endpoint. The third column is the gap each screen found between what it shows and what the LLD's endpoint describes. Many screens show summary figures (dashboard tiles, KPI rows) for which the LLD has no summary resource; those notes say which data the summary needs.
 
 Screens the LLD requires but the wireframes do not draw. These have to be designed before they can be built:
 
@@ -215,7 +227,7 @@ Screens the LLD requires but the wireframes do not draw. These have to be design
 | Support grants and recovery approvers (super admin); pending break-glass approvals | 7, section 15 |
 | Emergency issue in read-only licence state | LD-86, section 15 |
 | Requester (User Type 4) screens: raise requests and returns, acknowledge receipt | 5.1, 9.2 |
-| Platform Console: enterprises, platform audit trail ("F54"), onboarding wizard ("F35"), provisioning runs, migrations, break-glass requests, staff users | 6.8, section 15 |
+| Platform Console: staff sign-in, authenticator enrolment and challenge, activation; enterprises; platform audit trail ("F54"); customer onboarding ("F35") and the progress and resume of a provisioning run, with the one-time handover; licence assignment and renewal; suspend, reinstate, terminate; staff accounts; migrations; break-glass requests. The Platform Service has every endpoint except migrations and break-glass (unit 5) | 6.6, 6.8, section 15 |
 
 <!-- generated: ui-dependencies begin -->
 ### Tenant Web App
@@ -353,23 +365,28 @@ Actions that are not connected (53):
 
 ### Platform Console
 
-Reads served from sample data (4):
+Reads connected to the Platform Service (3):
+
+| Endpoint | Data function file | Notes |
+|---|---|---|
+| `GET /platform/v1/customers` | `data/enterprises.ts` | Customer code and legal name for the enterprise selector. |
+| `GET /platform/v1/customers` | `data/licences.ts` | Each customer with its active (or latest) licence, database and derived licence state; the grace and read-only dates of the customer nearest expiry are derived from its licence (LLD 6.4). Sites and users in use are not visible to the platform tier (AD-13) and show as not reported. |
+| `GET /platform/v1/customers` | `data/overview.ts` | Also GET /platform/v1/audit (platform activity) and GET /platform/v1/users (who acted). Users and sites in use, API calls, last activity, uptime and the NFR health figures have no /platform/v1 resource in LLD section 12 and show as not reported; usage inside a customer database is not visible to the platform tier (AD-13). |
+
+Reads served from sample data (1):
 
 | Endpoint | Data function file | What the screen needs beyond the LLD's description |
 |---|---|---|
-| `GET /platform/v1/customers` | `data/overview.ts` | Needs, per customer, the database name or provisioning state, users used / licensed, 7-day API call count and last activity; plus platform totals (customers by status, users, uptime, API calls today), recent platform activity (GET /platform/v1/audit) and NFR health figures, which no /platform/v1 resource in LLD section 12 provides. |
-| `GET /platform/v1/licences` | `data/config.ts` | Module flags, environment rails and the tenant override boundary have no /platform/v1 resource in LLD section 12; the frame's plan entitlement rails are not part of the design. |
-| `GET /platform/v1/licences` | `data/licences.ts` | Registry rows need validity, sites and users used / licensed, modules, the customer database and a status; the grace and read-only dates of the customer nearest expiry are derived from its licence (LLD 6.4). |
-| `Platform Console sign-in (Platform Service, MFA mandatory)` | `data/session.ts` | No staff login or session endpoint exists yet. |
+| `GET /platform/v1/config (no such resource in LLD 6.8)` | `data/config.ts` | Module flags, environment rails and the tenant override boundary have no /platform/v1 resource in LLD section 12; the frame's plan entitlement rails are not part of the design. |
 
 Actions that are not connected (4):
 
 | Endpoint | Screens |
 |---|---|
-| `GET /platform/v1/customers (usage report export)` | `/overview` |
-| `PATCH /platform/v1/config (no such resource in the LLD yet)` | `/config` |
-| `POST /platform/v1/customers` | `/overview` |
-| `POST /platform/v1/licences` | `/licenses` |
+| `a platform configuration resource (none in LLD 6.8)` | `/config` |
+| `a usage report export (no /platform/v1 resource in the LLD)` | `/overview` |
+| `POST /platform/v1/customers/{id}/licences` | `/licenses` |
+| `POST /platform/v1/provisioning-runs` | `/overview` |
 <!-- generated: ui-dependencies end -->
 
 ## 10. Wireframes against the design
@@ -386,6 +403,8 @@ Resolved by the product owner's authority rule (17 November 2026, top of this do
 | F51, F53 | "the enterprise's own sign-in"; "OAuth2 + PKCE · company SSO (Q24)"; F03 "Continue with Company SSO" | Password and authenticator (MFA); SSO is Phase 2 (AD-23). The F03 button explains this when pressed |
 | F53 | "v1.4 · X-API-Version header"; webhooks "3 retries → dead-letter queue" | `/api/v1`, additive changes only (LLD 12); retries up to 24 h, then parked (LLD 13) |
 | F51, F53 | Trials; platform-wide module flags (developer console, SMS, accounting connector) | Trials removed (customer statuses are LLD 4's). Module flags stay as drawn sample data: there is no `/platform/v1` resource for them (open, U-07) |
+| F52 | "Expiring 12 d" pill and "08 Oct 2026 · 12 d" | Live rows show the date and the derived licence state (Active, Grace until a date, Read-only, Suspended, Terminated, Provisioning): the LLD defines no expiry warning period |
+| F51, F52 | Users and sites in use per customer, API calls, last activity, uptime, NFR health | Live rows show "—" or "not reported": the Platform Service holds no customer data (AD-13) and the LLD has no usage interface (open, U-17) |
 
 **Permissions of the seeded user types.** The LLD decides (LLD 5.1); the screens show effective permissions:
 
@@ -444,8 +463,8 @@ Latest run, 19 November 2026:
 
 | Suite | Result |
 |---|---|
-| Browser tests (`npm run test:e2e`, production builds of both apps; tenant app on sample data and signed in to the real Core) | 119 passed (16 against the real Core) |
-| Python suite including the TypeScript-contract and UI checks (`uv run pytest`) | 279 passed |
+| Browser tests (`npm run test:e2e`, production builds of both apps, each on sample data and signed in to the real backend) | 127 passed (16 against the real Core, 8 against the real Platform Service) |
+| Python suite including the TypeScript-contract and UI checks (`uv run pytest`) | 299 passed |
 | `npm run typecheck`, `npm run lint` | Clean |
 
 Problems the browser tests found and the fixes:

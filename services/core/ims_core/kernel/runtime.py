@@ -10,19 +10,24 @@ import httpx
 from ims_common.clock import Clock, SystemClock
 from ims_common.identifiers import key_from_secret
 from ims_common.objectstore import FileObjectStore, ObjectStore
+from ims_common.problem import DomainError
 from ims_common.secrets import FileSecretsStore, SecretNotFoundError, SecretsStore
 from ims_common.service_auth import ServiceTokenIssuer, ServiceTokenVerifier
-from ims_common.tokens import KeySet, TokenCodec
+from ims_common.tokens import KeySet, TokenCodec, TokenError
 from ims_contracts.enums import LicenceModule
+from ims_contracts.errors import ErrorCode
+from ims_contracts.licence import derive_state
 from ims_core.kernel.authn import Authenticator, CredentialTokens
 from ims_core.kernel.context import Principal, Source, TenantContext
 from ims_core.kernel.db import DatabaseRouter
 from ims_core.kernel.directory import DirectoryCache, DirectoryClient, HttpDirectoryClient
 from ims_core.kernel.licence import (
     BundleSource,
+    CustomerUnknownError,
     HttpRegistryClient,
     LicenceGate,
     RegistryClient,
+    RegistryUnavailableError,
     SnapshotStore,
 )
 from ims_core.kernel.pipeline import RequestPipeline
@@ -60,6 +65,8 @@ class CoreRuntime:
     bff_verifier: ServiceTokenVerifier | None
     directory: DirectoryCache | None
     http: httpx.AsyncClient | None = None
+    registry_client: RegistryClient | None = None
+    platform_verifier: ServiceTokenVerifier | None = None
 
     def pipeline(self, stages: PipelineStages) -> RequestPipeline:
         return RequestPipeline(
@@ -96,6 +103,37 @@ class CoreRuntime:
             request_id=request_id,
             source=source,
             principal=principal,
+        )
+
+    async def provisioning_context(self, service_token: str, *, request_id: str) -> TenantContext:
+        """Tenant context for provisioning step 6 (LLD 6.6): the Platform Service, proven by its
+        signed service token, names the customer in the token's claims (AD-21) and the database
+        comes from a snapshot the Registry serves only while that customer's run is creating its
+        super admin. The context acts as the system; there is no principal."""
+        if self.platform_verifier is None or self.registry_client is None:
+            raise DomainError(ErrorCode.AUTH_REQUIRED, "provisioning is not enabled on this instance")
+        try:
+            caller = self.platform_verifier.verify(
+                service_token, allowed=frozenset({self.settings.platform_service_name})
+            )
+            customer_id = UUID(str(caller.claims["cid"]))
+        except (TokenError, KeyError, ValueError):
+            raise DomainError(ErrorCode.AUTH_REQUIRED, "a platform service token is required") from None
+        try:
+            snapshot = await self.registry_client.fetch_provisioning_snapshot(customer_id)
+        except CustomerUnknownError:
+            raise DomainError(
+                ErrorCode.NOT_FOUND, "no provisioning run is creating this customer's super admin"
+            ) from None
+        except RegistryUnavailableError:
+            raise DomainError(ErrorCode.PLATFORM_UNAVAILABLE, headers={"Retry-After": "2"}) from None
+        return TenantContext(
+            customer_id=snapshot.customer_id,
+            customer_code=snapshot.customer_code,
+            snapshot=snapshot,
+            licence_state=derive_state(snapshot, self.clock.now()),
+            request_id=request_id,
+            source="system",
         )
 
     async def aclose(self) -> None:
@@ -169,6 +207,14 @@ async def build_runtime(
         snapshots.add_change_listener(directory.on_change)
 
     try:
+        platform_keys = KeySet.from_secret(await secrets.get(settings.platform_verify_key_ref))
+        platform_verifier: ServiceTokenVerifier | None = ServiceTokenVerifier(
+            SERVICE_AUDIENCE_CORE_INTERNAL, {settings.platform_service_name: platform_keys}, clock
+        )
+    except SecretNotFoundError:
+        platform_verifier = None  # this instance cannot take part in provisioning
+
+    try:
         bff_keys = KeySet.from_secret(await secrets.get(settings.bff_verify_key_ref))
         bff_verifier: ServiceTokenVerifier | None = ServiceTokenVerifier(
             SERVICE_AUDIENCE_CORE_INTERNAL, {settings.bff_service_name: bff_keys}, clock
@@ -190,4 +236,6 @@ async def build_runtime(
         bff_verifier=bff_verifier,
         directory=directory,
         http=http,
+        registry_client=registry_client,
+        platform_verifier=platform_verifier,
     )

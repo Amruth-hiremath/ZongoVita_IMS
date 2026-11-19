@@ -20,6 +20,7 @@ import type { Metadata } from "next";
 
 import { ActionButton } from "@/components/action-button";
 import { getLicencesPage } from "@/data/licences";
+import { mayOpen } from "@/session/server";
 
 export const metadata: Metadata = { title: "Licenses" };
 
@@ -36,6 +37,7 @@ const checkSteps = [
  * the design defines instead (LLD 6.4; Docs/UI_Implementation.md section 10).
  */
 export default async function LicensesPage() {
+  if (!(await mayOpen("/licenses"))) return null;
   const page = await getLicencesPage();
 
   return (
@@ -44,7 +46,12 @@ export default async function LicensesPage() {
         title="Licenses"
         subtitle="The license registry — one row per customer: validity · sites · users · modules, mapped to that customer's database (FB-20)"
         actions={
-          <ActionButton endpoint="POST /platform/v1/licences" variant="primary" className="w-[124px]">
+          <ActionButton
+            endpoint="POST /platform/v1/customers/{id}/licences"
+            waitingFor="design"
+            variant="primary"
+            className="w-[124px]"
+          >
             Assign license
           </ActionButton>
         }
@@ -73,10 +80,10 @@ export default async function LicensesPage() {
                 {row.valid_till_label}
               </TD>
               <TD muted align="center" numeric className="whitespace-nowrap">
-                {row.sites_used} / {row.sites_licensed}
+                {row.sites_used ?? "—"} / {row.sites_licensed}
               </TD>
               <TD muted align="center" numeric className="whitespace-nowrap">
-                {row.users_used} / {row.users_licensed}
+                {row.users_used ?? "—"} / {row.users_licensed}
               </TD>
               <TD muted className="whitespace-nowrap">
                 {row.modules.join(" · ")}
@@ -124,26 +131,35 @@ export default async function LicensesPage() {
           </CardBody>
         </Card>
 
-        <Card>
-          <CardHeader title={`Licence expiry — ${page.expiry.enterprise_code}`} />
-          <CardBody className="pt-5">
-            <p className="text-[13px] font-semibold text-gray-900">{page.expiry.company}</p>
-            <Pill tone="amber" className="mt-1">
-              {page.expiry.status_label}
-            </Pill>
-            <dl className="mt-1 [&_dd]:text-gray-700">
-              <KeyValue label="Valid until" className="py-1">
-                {page.expiry.valid_until}
-              </KeyValue>
-              <KeyValue label="Grace period" className="py-1">
-                {page.expiry.grace_until}
-              </KeyValue>
-              <KeyValue label="After grace" className="py-1">
-                {page.expiry.after_grace}
-              </KeyValue>
-            </dl>
-          </CardBody>
-        </Card>
+        {page.expiry ? (
+          <Card>
+            <CardHeader title={`Licence expiry — ${page.expiry.enterprise_code}`} />
+            <CardBody className="pt-5">
+              <p className="text-[13px] font-semibold text-gray-900">{page.expiry.company}</p>
+              <Pill tone={page.expiry.tone} className="mt-1">
+                {page.expiry.status_label}
+              </Pill>
+              <dl className="mt-1 [&_dd]:text-gray-700">
+                <KeyValue label="Valid until" className="py-1">
+                  {page.expiry.valid_until}
+                </KeyValue>
+                <KeyValue label="Grace period" className="py-1">
+                  {page.expiry.grace_until}
+                </KeyValue>
+                <KeyValue label="After grace" className="py-1">
+                  {page.expiry.after_grace}
+                </KeyValue>
+              </dl>
+            </CardBody>
+          </Card>
+        ) : (
+          <Card>
+            <CardHeader title="Licence expiry" />
+            <CardBody className="pt-5">
+              <p className="text-[12.5px] text-gray-500">No customer has a licence in force.</p>
+            </CardBody>
+          </Card>
+        )}
       </div>
     </>
   );

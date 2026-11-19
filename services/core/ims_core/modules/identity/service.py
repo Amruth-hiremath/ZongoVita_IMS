@@ -25,6 +25,8 @@ from uuid import UUID
 
 from sqlalchemy import text
 
+from ims_common import auth_codes as domain
+from ims_common.credentials import PasswordHasher, SecretBox
 from ims_common.identifiers import InvalidIdentifierError, normalise_login_identifier
 from ims_common.ids import uuid7
 from ims_common.problem import DomainError
@@ -34,8 +36,7 @@ from ims_core.kernel.authn import API_CLIENT_ACCESS_TTL, USER_ACCESS_TTL, Challe
 from ims_core.kernel.context import Principal, Source, TenantContext, with_principal
 from ims_core.kernel.licence import RegistryUnavailableError
 from ims_core.kernel.uow import UnitOfWork, unit_of_work
-from ims_core.modules.identity import domain, events, repository
-from ims_core.modules.identity.credentials import PasswordHasher, SecretBox
+from ims_core.modules.identity import events, repository
 
 if TYPE_CHECKING:
     from contextlib import AbstractAsyncContextManager
@@ -723,6 +724,35 @@ class IdentityService:
         return CreatedApiClient(client_id=client_id, client_secret=secret)
 
     # ================================================================== managing principals
+    async def reissue_activation_code(self, uow: UnitOfWork, user_id: UUID) -> CreatedUser:
+        """A new one-time activation code for a user who has not activated yet; the previous
+        code stops working. Used when provisioning repeats its super-admin step (LLD 6.6: every
+        step is safe to retry), because the first code may never have reached anyone."""
+        user = await repository.lock_user(uow.db, user_id)
+        if user is None:
+            raise DomainError(ErrorCode.NOT_FOUND)
+        if user.status != "invited":
+            raise DomainError(
+                ErrorCode.INVALID_STATE_TRANSITION, "only an invited user has an activation code"
+            )
+        code = domain.new_activation_code()
+        expires = self._now() + timedelta(hours=self._settings.activation_code_hours)
+        await repository.update_user(
+            uow.db,
+            user_id,
+            actor=_actor(uow),
+            activation_code_hash=domain.hash_code(code),
+            activation_expires_at=expires,
+            failed_attempts=0,
+        )
+        await uow.audit.record(
+            action="iam.user.activation_code_reissued",
+            entity_type="iam.user",
+            entity_id=user_id,
+            after={"activation_expires_at": expires},
+        )
+        return CreatedUser(user_id=user_id, activation_code=code, activation_expires_at=expires)
+
     async def update_profile(
         self,
         uow: UnitOfWork,
